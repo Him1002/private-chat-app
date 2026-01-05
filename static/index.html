@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Private Chat</title>
+</head>
+<body>
+
+<h2>Login</h2>
+<input id="username" placeholder="username">
+<input id="password" placeholder="password" type="password">
+<button onclick="login()">Login</button>
+
+<hr>
+
+<h2>Chat</h2>
+<input id="friend" placeholder="friend username">
+<button onclick="connect()">Connect</button>
+
+<div id="chat"></div>
+
+<input id="msg" placeholder="message">
+<button onclick="send()">Send</button>
+
+<script>
+
+let token = null;
+
+async function login() {
+  let res = await fetch("/login", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      username: username.value,
+      password: password.value
+    })
+  });
+
+  const data = await res.json();
+  token = data.access_token;   // ✅ FIXED
+  console.log("TOKEN SET:", token);
+}
+
+let ws = null;
+
+function connect() {
+    if (!token) {
+        alert("Please login first");
+        return;
+    }
+    const friend = document.getElementById("friend").value;
+
+    ws = new WebSocket(`ws://127.0.0.1:8000/ws?token=${token}`);
+
+    ws.onopen = () => {
+        console.log("WS connected");
+
+        ws.send(JSON.stringify({
+        type: "join",
+        room: friend
+        }));
+    };
+
+    ws.onmessage = (e) => {
+        const m = JSON.parse(e.data);
+        document.getElementById("chat").innerHTML +=
+        `<div><b>${m.sender || "system"}:</b> ${m.text || m.message}</div>`;
+    };
+
+    ws.onclose = () => {
+        console.log("WS closed");
+    };
+}
+
+function send() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        alert("WebSocket not connected");
+        return;
+    }
+
+    const friend = document.getElementById("friend").value;
+    ws.send(JSON.stringify({
+        type: "chat",
+        room: friend,
+        text: msg.value
+    }));
+    msg.value = "";
+}
+</script>
+
+</body>
+</html>

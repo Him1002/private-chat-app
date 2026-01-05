@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"> <title>Private Chat</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #121212; color: white; display: flex; height: 100vh; margin: 0; overflow: hidden; }
+        
+        /* --- TOAST NOTIFICATIONS (Replaces Alerts) --- */
+        #toast-container { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+        .toast { background: #333; color: white; padding: 12px 24px; border-radius: 25px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); opacity: 0; transform: translateY(20px); transition: 0.3s; text-align: center; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.error { background: #d9534f; }
+        .toast.success { background: #28a745; }
+
+        /* --- LOGIN & MODALS --- */
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #121212; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
+        .box { background: #1e1e1e; padding: 30px; border-radius: 10px; border: 1px solid #333; display: flex; flex-direction: column; gap: 15px; width: 85%; max-width: 300px; }
+        input { padding: 12px; background: #333; border: none; color: white; border-radius: 5px; outline: none; font-size: 16px; } /* 16px prevents zoom on iOS */
+        button { padding: 12px; background: #007bff; border: none; color: white; cursor: pointer; border-radius: 5px; font-weight: bold; font-size: 16px; transition: 0.2s; }
+        button:active { transform: scale(0.98); }
+        .link { text-align: center; font-size: 14px; color: #aaa; cursor: pointer; margin-top: 10px; padding: 10px; }
+
+        /* --- LAYOUT --- */
+        #app-container { display: none; width: 100%; height: 100%; overflow: hidden; }
+        
+        /* SIDEBAR */
+        .sidebar { width: 300px; background: #1e1e1e; border-right: 1px solid #333; display: flex; flex-direction: column; }
+        .sidebar-header { padding: 15px; border-bottom: 1px solid #333; background: #252525; }
+        .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        #search-input { width: 100%; padding: 10px; box-sizing: border-box; }
+        .list-area { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+
+        /* CHAT AREA */
+        .chat-area { flex: 1; display: flex; flex-direction: column; background: #121212; position: relative; }
+        .chat-header { padding: 15px; background: #1e1e1e; border-bottom: 1px solid #333; font-weight: bold; display: flex; align-items: center; gap: 10px; height: 60px; box-sizing: border-box; }
+        
+        /* Back Button (Hidden on Desktop) */
+        #back-btn { display: none; background: transparent; color: white; font-size: 24px; padding: 0 10px; cursor: pointer; }
+
+        .messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 8px; background: #0f0f0f; }
+        
+        /* Messages */
+        .msg { max-width: 75%; padding: 10px 15px; border-radius: 18px; font-size: 15px; line-height: 1.4; word-wrap: break-word; }
+        .msg.me { align-self: flex-end; background-color: #007bff; color: white; border-bottom-right-radius: 4px; }
+        .msg.friend { align-self: flex-start; background-color: #262626; color: #e0e0e0; border-bottom-left-radius: 4px; }
+        .sender-name { font-size: 10px; opacity: 0.6; display: block; margin-bottom: 2px; }
+
+        /* Input Area */
+        .input-area { padding: 10px; background: #1e1e1e; display: flex; gap: 10px; border-top: 1px solid #333; align-items: center; }
+        .input-area input { flex: 1; height: 40px; }
+        #send-btn { width: 50px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; }
+
+        /* ITEM STYLES */
+        .item { padding: 15px; cursor: pointer; display: flex; align-items: center; gap: 15px; border-bottom: 1px solid #252525; }
+        .item:active { background: #333; }
+        .item.active { background: #2d2d2d; border-left: 4px solid #007bff; }
+        .avatar { width: 45px; height: 45px; background: #444; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; flex-shrink: 0; }
+        .info { display: flex; flex-direction: column; justify-content: center; flex: 1; }
+        .name { font-weight: 600; font-size: 16px; }
+        .status { font-size: 13px; color: #888; }
+        .status.online { color: #2ecc71; }
+        .action-btn { font-size: 12px; padding: 6px 12px; background: #444; margin-left: auto; border-radius: 4px; }
+
+        /* --- MOBILE RESPONSIVE LOGIC --- */
+        @media (max-width: 768px) {
+            .sidebar { width: 100%; height: 100%; position: absolute; z-index: 10; transition: transform 0.3s ease; }
+            .chat-area { width: 100%; height: 100%; position: absolute; z-index: 5; }
+            
+            #back-btn { display: block; } /* Show back arrow */
+
+            /* STATES */
+            body.view-chat .sidebar { transform: translateX(-100%); } /* Hide sidebar */
+            body.view-list .sidebar { transform: translateX(0); } /* Show sidebar */
+        }
+    </style>
+</head>
+<body>
+
+<div id="toast-container"></div>
+
+<div id="login-screen" class="overlay">
+    <div class="box">
+        <h2 id="form-title" style="text-align: center; margin: 0;">Login</h2>
+        <input id="username" placeholder="Username">
+        <input id="password" type="password" placeholder="Password">
+        <button id="auth-btn" onclick="handleAuth()">Login</button>
+        <div class="link" onclick="toggleMode()" id="toggle-text">Need an account? Register</div>
+    </div>
+</div>
+
+<div id="app-container" class="view-list"> <div class="sidebar">
+        <div class="sidebar-header">
+            <div class="header-top">
+                <span style="font-weight:bold; font-size: 18px;">Contacts</span>
+                <button onclick="logout()" style="padding: 6px 12px; font-size: 12px; background: #d9534f;">Logout</button>
+            </div>
+            <input id="search-input" placeholder="Search users..." onkeyup="handleSearch(event)">
+        </div>
+        <div id="list-area" class="list-area"></div>
+    </div>
+
+    <div class="chat-area">
+        <div class="chat-header">
+            <button id="back-btn" onclick="showListView()">&#8592;</button>
+            <div style="display:flex; flex-direction:column;">
+                <span id="chat-title">Chat</span>
+                <span id="chat-status" style="font-size: 12px; font-weight: normal; color: #888;"></span>
+            </div>
+        </div>
+        <div id="messages" class="messages"></div>
+        <div class="input-area">
+            <input id="msg-input" placeholder="Message..." disabled onkeypress="handleEnter(event)">
+            <button id="send-btn" onclick="send()" disabled>&#10148;</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let token = null;
+    let currentUser = null;
+    let currentFriend = null;
+    let ws = null;
+    let isRegisterMode = false;
+
+    // --- UI HELPERS ---
+    function showToast(msg, type = "normal") {
+        const container = document.getElementById("toast-container");
+        const div = document.createElement("div");
+        div.className = `toast ${type}`;
+        div.innerText = msg;
+        container.appendChild(div);
+        
+        // Trigger animation
+        setTimeout(() => div.classList.add("show"), 10);
+        setTimeout(() => {
+            div.classList.remove("show");
+            setTimeout(() => div.remove(), 300);
+        }, 3000);
+    }
+
+    function showChatView() {
+        document.body.classList.add("view-chat");
+        document.body.classList.remove("view-list");
+    }
+
+    function showListView() {
+        document.body.classList.add("view-list");
+        document.body.classList.remove("view-chat");
+        // Optional: Close WS to save battery/data if desired? For now, keep open.
+    }
+
+    function logout() {
+        token = null;
+        currentUser = null;
+        if (ws) ws.close();
+        document.getElementById("app-container").style.display = "none";
+        document.getElementById("login-screen").style.display = "flex";
+        document.getElementById("username").value = "";
+        document.getElementById("password").value = "";
+        showListView(); // Reset view
+    }
+
+    // --- UTILS ---
+    function formatLastSeen(isoStr) {
+        if (!isoStr) return "Offline";
+        const date = new Date(isoStr + "Z");
+        const now = new Date();
+        const diffSeconds = Math.floor((now - date) / 1000);
+        if (diffSeconds < 60) return "Online";
+        if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
+        if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
+        return `${Math.floor(diffSeconds / 86400)}d ago`;
+    }
+
+    // --- AUTH ---
+    function toggleMode() {
+        isRegisterMode = !isRegisterMode;
+        document.getElementById("form-title").innerText = isRegisterMode ? "Create Account" : "Login";
+        document.getElementById("auth-btn").innerText = isRegisterMode ? "Register" : "Login";
+        document.getElementById("toggle-text").innerText = isRegisterMode ? "Have an account? Login" : "Need an account? Register";
+    }
+
+    async function handleAuth() {
+        const user = document.getElementById("username").value;
+        const pass = document.getElementById("password").value;
+        const endpoint = isRegisterMode ? "/register" : "/login";
+        const btn = document.getElementById("auth-btn");
+
+        if(!user || !pass) return showToast("Please fill fields", "error");
+
+        btn.innerText = "Processing...";
+        btn.disabled = true;
+
+        try {
+            const res = await fetch(endpoint, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ username: user, password: pass })
+            });
+            const data = await res.json();
+            
+            if (res.ok) {
+                if (isRegisterMode) {
+                    showToast("Registered! Please log in.", "success");
+                    toggleMode();
+                } else {
+                    token = data.access_token;
+                    currentUser = user;
+                    document.getElementById("login-screen").style.display = "none";
+                    document.getElementById("app-container").style.display = "flex";
+                    loadSidebar();
+                }
+            } else {
+                showToast(data.detail || "Error", "error");
+            }
+        } catch (e) { showToast("Server error", "error"); }
+        
+        btn.innerText = isRegisterMode ? "Register" : "Login";
+        btn.disabled = false;
+    }
+
+    // --- SIDEBAR ---
+    async function loadSidebar() {
+        const list = document.getElementById("list-area");
+        list.innerHTML = "";
+
+        // Requests
+        const reqRes = await fetch("/friends/requests", { headers: { "Authorization": `Bearer ${token}` } });
+        const requests = await reqRes.json();
+        
+        requests.forEach(r => {
+            const div = document.createElement("div");
+            div.className = "item";
+            div.style.background = "#2a1a1a";
+            div.innerHTML = `
+                <div class="avatar" style="background:#d9534f">!</div>
+                <div class="info"><span class="name">${r.username}</span><span class="status">Request</span></div>
+                <button class="action-btn" onclick="acceptRequest(${r.request_id})" style="background:#28a745">Accept</button>
+            `;
+            list.appendChild(div);
+        });
+
+        // Friends
+        const friendRes = await fetch("/friends", { headers: { "Authorization": `Bearer ${token}` } });
+        const friends = await friendRes.json();
+
+        friends.forEach(f => {
+            const div = document.createElement("div");
+            div.className = "item";
+            const seenText = formatLastSeen(f.last_seen);
+            const isOnline = seenText === "Online";
+            
+            div.innerHTML = `
+                <div class="avatar">${f.username[0].toUpperCase()}</div>
+                <div class="info">
+                    <span class="name">${f.username}</span>
+                    <span class="status ${isOnline ? 'online' : ''}">${seenText}</span>
+                </div>
+            `;
+            div.onclick = () => startChat(f, div);
+            list.appendChild(div);
+        });
+    }
+
+    async function handleSearch(e) {
+        const query = e.target.value;
+        if (!query) return loadSidebar(); 
+
+        const res = await fetch(`/search?query=${query}`, { headers: { "Authorization": `Bearer ${token}` } });
+        const results = await res.json();
+        const list = document.getElementById("list-area");
+        list.innerHTML = "";
+        
+        if (results.length === 0) list.innerHTML = "<div style='padding:20px;text-align:center;color:#666'>No users found</div>";
+
+        results.forEach(item => {
+            const div = document.createElement("div");
+            div.className = "item";
+            let action = "";
+
+            if (item.status === "none") {
+                action = `<button class="action-btn" onclick="addFriend('${item.username}')">Add</button>`;
+            } else if (item.status === "pending") {
+                action = `<span class="status">Sent</span>`;
+            } else {
+                action = `<span class="status">Friend</span>`;
+            }
+
+            div.innerHTML = `
+                <div class="avatar">${item.username[0].toUpperCase()}</div>
+                <div class="info"><span class="name">${item.username}</span></div>
+                ${action}
+            `;
+            list.appendChild(div);
+        });
+    }
+
+    async function addFriend(username) {
+        await fetch(`/friends/request/${username}`, { method: "POST", headers: { "Authorization": `Bearer ${token}` } });
+        showToast(`Request sent to ${username}`, "success");
+        handleSearch({target: {value: document.getElementById("search-input").value}});
+    }
+
+    async function acceptRequest(id) {
+        await fetch(`/friends/accept/${id}`, { method: "POST", headers: { "Authorization": `Bearer ${token}` } });
+        showToast("Friend added!", "success");
+        loadSidebar();
+    }
+
+    // --- CHAT ---
+    function startChat(friend, element) {
+        currentFriend = friend.username;
+        document.querySelectorAll(".item").forEach(el => el.classList.remove("active"));
+        element.classList.add("active");
+        
+        document.getElementById("chat-title").innerText = friend.username;
+        document.getElementById("chat-status").innerText = formatLastSeen(friend.last_seen);
+        document.getElementById("messages").innerHTML = "";
+        document.getElementById("msg-input").disabled = false;
+        document.getElementById("send-btn").disabled = false;
+
+        if (ws) ws.close();
+        ws = new WebSocket(`ws://${window.location.host}/ws?token=${token}`);
+        
+        ws.onopen = () => ws.send(JSON.stringify({ type: "join", room: currentFriend }));
+        ws.onmessage = (e) => {
+            const data = JSON.parse(e.data);
+            if (data.type === "chat") addMessage(data.sender, data.text);
+        };
+
+        // 🔥 MOBILE: SWITCH TO CHAT VIEW
+        showChatView();
+    }
+
+    function send() {
+        const input = document.getElementById("msg-input");
+        if (!input.value || !ws) return;
+        ws.send(JSON.stringify({ type: "chat", room: currentFriend, text: input.value }));
+        input.value = "";
+    }
+
+    function addMessage(sender, text) {
+        const box = document.getElementById("messages");
+        const isMe = sender === currentUser;
+        const div = document.createElement("div");
+        div.className = `msg ${isMe ? "me" : "friend"}`;
+        div.innerHTML = `<span class="sender-name">${sender}</span>${text}`;
+        box.appendChild(div);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function handleEnter(e) { if (e.key === "Enter") send(); }
+</script>
+</body>
+</html>

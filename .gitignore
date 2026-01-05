@@ -1,0 +1,6 @@
+__pycache__/
+chatapp/
+.env
+*.db
+*.pyc
+.DS_Store

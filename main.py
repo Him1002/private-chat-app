@@ -33,7 +33,7 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 @app.get("/")
 def frontend():
-    return FileResponse("static/index1.html")
+    return FileResponse("static/index.html")
 
 User.metadata.create_all(bind=engine)
 

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"> <title>Private Chat</title>
     <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/layout.css">
     <style>
     /* --- RESET & BASICS --- */
 
@@ -24,29 +25,8 @@
     .link { color: #888; font-size: 14px; margin-top: 10px; }
 
     /* --- MAIN LAYOUT --- */
-    #app-container { display: none; width: 100%; height: 100%; position: relative; }
-
-    /* SIDEBAR (PC Default) */
-    .sidebar { 
-        width: 320px; background: #1e1e1e; border-right: 1px solid #2a2a2a; 
-        display: flex; flex-direction: column; z-index: 20; 
-    }
-
-    /* CHAT AREA (PC Default) */
-    .chat-area { 
-        flex: 1; display: flex; flex-direction: column; background: #0f0f0f; 
-        position: relative; z-index: 10; 
-    }
 
     /* --- HEADERS & TABS --- */
-    .sidebar-header { background: #1e1e1e; display: flex; flex-direction: column; border-bottom: 1px solid #2a2a2a; }
-    
-    .chat-header { 
-        padding: 10px 15px; background: #2c2c2c; border-bottom: 1px solid #333; color: white;
-        display: flex; align-items: center; justify-content: flex-start; height: 60px; gap: 10px; box-sizing: border-box;
-    }
-
-    /* Tabs */
     .tab-btn { flex: 1; text-align: center; padding: 12px; cursor: pointer; font-size: 14px; font-weight: 600; color: #888; border-bottom: 2px solid transparent; }
     .tab-btn.active { color: #0084ff; border-bottom: 2px solid #0084ff; }
     
@@ -55,7 +35,6 @@
     #search-input { width: 100%; padding: 10px; background: #2a2a2a; border: none; border-radius: 8px; color: white; outline: none; }
 
     /* --- LIST & ITEMS --- */
-    .list-area { flex: 1; overflow-y: auto; }
     .item { padding: 15px; display: flex; align-items: center; gap: 15px; border-bottom: 1px solid #252525; cursor: pointer; }
     .item.active { background: #2a2a2a; border-left: 4px solid #0084ff; }
     .section-title { padding: 10px 15px; font-size: 12px; font-weight: bold; color: #666; background: #151515; text-transform: uppercase; }
@@ -89,13 +68,6 @@
     .toast.show { opacity: 1; transform: translateY(0); }
     .toast.error { background: #d9534f; }
     .toast.success { background: #28a745; }
-
-    .user-details {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start; /* Forces text to align left */
-        justify-content: center;
-    }
 
     /* Clean Icon Buttons (Paperclip & Camera) */
     .icon-btn {

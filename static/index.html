@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -169,7 +169,7 @@
         
         <div id="messages" class="messages">
             <div style="height: 100%; display: flex; align-items: center; justify-content: center; color: #333; flex-direction: column;">
-                <div style="font-size: 40px; margin-bottom: 10px;">ðŸ’¬</div>
+                <div style="font-size: 40px; margin-bottom: 10px;">💬</div>
                 <div>Select a contact to start chatting</div>
             </div>
         </div>
@@ -182,12 +182,12 @@
             <input type="file" id="input-gallery" style="display: none;" accept="image/*" onchange="handleFileUpload(this)">
             <input type="file" id="input-camera" style="display: none;" accept="image/*" capture="environment" onchange="handleFileUpload(this)">
             
-            <button class="icon-btn" id="emoji-btn">ðŸ™‚</button>
+            <button class="icon-btn" id="emoji-btn">🙂</button>
 
             <input id="msg-input" placeholder="Message..." disabled onkeypress="handleEnter(event)" oninput="handleInput()">
 
-            <button class="icon-btn" onclick="document.getElementById('input-gallery').click()">ðŸ“Ž</button>
-            <button class="icon-btn" onclick="document.getElementById('input-camera').click()">ðŸ“·</button>
+            <button class="icon-btn" onclick="document.getElementById('input-gallery').click()">📎</button>
+            <button class="icon-btn" onclick="document.getElementById('input-camera').click()">📷</button>
             
             
             <button id="send-btn" onclick="send()" disabled>&#10148;</button>
@@ -201,6 +201,7 @@
 <script src="/static/js/auth.js"></script>
 <script src="/static/js/websocket.js"></script>
 <script src="/static/js/chat.js"></script>
+<script src="/static/js/upload.js"></script>
 <script>
     let token = null;
     let currentUser = null;
@@ -229,46 +230,6 @@
 
     // --- CHAT ---
 
-    async function handleFileUpload(inputElement) {
-        const file = inputElement.files[0];
-        if (!file) return;
-        if (!currentFriend) {
-            showToast("Select a chat first", "error");
-            inputElement.value = "";
-            return;
-        }
-
-        const formData = new FormData();
-        formData.append("file", file);
-
-        try {
-            showToast("Uploading...", "normal");
-            const res = await fetch("/upload", {
-                method: "POST",
-                headers: { "Authorization": `Bearer ${token}` },
-                body: formData
-            });
-            
-            if (res.ok) {
-                const data = await res.json();
-                // Send message with Image URL
-                const sent = sendSocketPayload({
-                    type: "chat",
-                    room: currentFriend,
-                    text: "", 
-                    image_url: data.url
-                });
-                if (!sent) {
-                    showToast("Reconnecting chat...", "normal");
-                }
-            } else {
-                showToast("Upload failed", "error");
-            }
-        } catch (e) {
-            showToast("Error uploading", "error");
-        }
-        inputElement.value = ""; // Reset
-    }
 
 
 </script>

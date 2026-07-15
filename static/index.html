@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -169,7 +169,7 @@
         
         <div id="messages" class="messages">
             <div style="height: 100%; display: flex; align-items: center; justify-content: center; color: #333; flex-direction: column;">
-                <div style="font-size: 40px; margin-bottom: 10px;">💬</div>
+                <div style="font-size: 40px; margin-bottom: 10px;">ðŸ’¬</div>
                 <div>Select a contact to start chatting</div>
             </div>
         </div>
@@ -182,12 +182,12 @@
             <input type="file" id="input-gallery" style="display: none;" accept="image/*" onchange="handleFileUpload(this)">
             <input type="file" id="input-camera" style="display: none;" accept="image/*" capture="environment" onchange="handleFileUpload(this)">
             
-            <button class="icon-btn" id="emoji-btn">🙂</button>
+            <button class="icon-btn" id="emoji-btn">ðŸ™‚</button>
 
             <input id="msg-input" placeholder="Message..." disabled onkeypress="handleEnter(event)" oninput="handleInput()">
 
-            <button class="icon-btn" onclick="document.getElementById('input-gallery').click()">📎</button>
-            <button class="icon-btn" onclick="document.getElementById('input-camera').click()">📷</button>
+            <button class="icon-btn" onclick="document.getElementById('input-gallery').click()">ðŸ“Ž</button>
+            <button class="icon-btn" onclick="document.getElementById('input-camera').click()">ðŸ“·</button>
             
             
             <button id="send-btn" onclick="send()" disabled>&#10148;</button>
@@ -197,6 +197,7 @@
 
 <script src="/static/js/core.js"></script>
 <script src="/static/js/utils.js"></script>
+<script src="/static/js/sidebar.js"></script>
 <script>
     let token = null;
     let currentUser = null;
@@ -353,7 +354,7 @@
         currentFriend = null;
         currentTab = 'chats'; // Reset tab
 
-        // 3. 🚨 SECURITY WIPE: Clear sensitive HTML
+        // 3. ðŸš¨ SECURITY WIPE: Clear sensitive HTML
         document.getElementById("list-area").innerHTML = ""; // Wipe contacts
         document.getElementById("messages").innerHTML = "";  // Wipe chat history
         document.getElementById("chat-title").innerText = "Select a Chat"; // Reset Header
@@ -368,7 +369,7 @@
         // We inject the Welcome HTML back into the message box so the next user sees that, not a blank void
         document.getElementById("messages").innerHTML = `
             <div id="welcome-screen" style="height: 100%; display: flex; align-items: center; justify-content: center; color: #555; flex-direction: column;">
-                <div style="font-size: 40px; margin-bottom: 10px; opacity:0.5;">💬</div>
+                <div style="font-size: 40px; margin-bottom: 10px; opacity:0.5;">ðŸ’¬</div>
                 <div style="opacity:0.6;">Select a contact to start chatting securely</div>
             </div>
         `;
@@ -434,150 +435,6 @@
         btn.disabled = false;
     }
 
-    function switchTab(tabName) {
-        currentTab = tabName;
-        
-        // Update UI Tabs
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById(`tab-${tabName}`).classList.add('active');
-
-        // Show/Hide Search
-        const searchBox = document.getElementById("search-container");
-        if (tabName === 'people') {
-            searchBox.style.display = 'block';
-        } else {
-            searchBox.style.display = 'none';
-        }
-
-        // Reload the list
-        loadSidebar();
-    }
-    // --- SIDEBAR ---
-    async function loadSidebar() {
-        if (!token) return;
-
-        const list = document.getElementById("list-area");
-        list.innerHTML = "";
-
-        // fetch data
-        const [reqRes, friendRes] = await Promise.all([
-            fetch("/friends/requests", { headers: { "Authorization": `Bearer ${token}` } }),
-            fetch("/friends", { headers: { "Authorization": `Bearer ${token}` } })
-        ]);
-
-        if (!reqRes.ok || !friendRes.ok) return;
-
-        const requests = await reqRes.json();
-        const friends = await friendRes.json();
-        const selectedFriend = friends.find(f => f.username === currentFriend);
-        if (selectedFriend) updateChatStatus(selectedFriend);
-
-        // === RENDER LOGIC BASED ON TAB ===
-        
-        if (currentTab === 'chats') {
-            // -- CHATS TAB: Only show Friends (Active Chats) --
-            // (Ideally, backend should sort by 'last_message_time', for now we show all friends)
-            
-            if (friends.length === 0) {
-                list.innerHTML = "<div style='padding:20px; text-align:center; color:#555;'>No chats yet.<br>Go to 'People' to add friends!</div>";
-                return;
-            }
-
-            friends.forEach(f => renderFriendItem(list, f));
-
-        } else if (currentTab === 'people') {
-            // -- PEOPLE TAB: Requests + Search Results + All Friends --
-            
-            // 1. Friend Requests
-            if (requests.length > 0) {
-                list.innerHTML += `<div class="section-title">Requests (${requests.length})</div>`;
-                requests.forEach(r => {
-                    const div = document.createElement("div");
-                    div.className = "item";
-                    div.innerHTML = `
-                        <div class="avatar" style="background:#d9534f; border:none;">!</div>
-                        <div class="info"><span class="name">${r.username}</span></div>
-                        <button class="action-btn" onclick="acceptRequest(${r.request_id})" style="background:#28a745">Accept</button>
-                    `;
-                    list.appendChild(div);
-                });
-            }
-
-            // 2. All Friends (Directory)
-            list.innerHTML += `<div class="section-title">Your Contacts</div>`;
-            friends.forEach(f => renderFriendItem(list, f));
-        }
-    }
-
-    async function handleSearch(e) {
-        const query = e.target.value;
-        if (!query) return loadSidebar(); 
-
-        const res = await fetch(`/search?query=${query}`, { headers: { "Authorization": `Bearer ${token}` } });
-        const results = await res.json();
-        const list = document.getElementById("list-area");
-        list.innerHTML = "";
-        
-        if (results.length === 0) list.innerHTML = "<div style='padding:20px;text-align:center;color:#666'>No users found</div>";
-
-        results.forEach(item => {
-            const div = document.createElement("div");
-            div.className = "item";
-            let action = "";
-
-            if (item.status === "none") {
-                action = `<button class="action-btn" onclick="addFriend('${item.username}')">Add</button>`;
-            } else if (item.status === "pending") {
-                action = `<span class="status">Sent</span>`;
-            } else {
-                action = `<span class="status">Friend</span>`;
-            }
-
-            div.innerHTML = `
-                <div class="avatar">${item.username[0].toUpperCase()}</div>
-                <div class="info"><span class="name">${item.username}</span></div>
-                ${action}
-            `;
-            list.appendChild(div);
-        });
-    }
-
-    // Helper to render a friend row
-    function renderFriendItem(container, f) {
-        const div = document.createElement("div");
-        div.className = "item";
-        if (currentTab === 'chats' && currentFriend === f.username) div.classList.add("active");
-
-        const avatarUrl = `https://api.dicebear.com/7.x/notionists/svg?seed=${f.username}&backgroundColor=b6e3f4,c0aede,d1d4f9`;
-        
-        // Use Backend "is_online" truth
-        const isOnline = f.is_online; 
-        const seenText = isOnline ? "Online" : formatLastSeen(f.last_seen);
-
-        div.innerHTML = `
-            <div class="avatar">
-                <img src="${avatarUrl}">
-            </div>
-            <div class="info">
-                <span class="name">${f.username}</span>
-                <span class="status ${isOnline ? 'online' : ''}">${seenText}</span>
-            </div>
-        `;
-        div.onclick = () => startChat(f, div);
-        container.appendChild(div);
-    }
-
-    async function addFriend(username) {
-        await fetch(`/friends/request/${username}`, { method: "POST", headers: { "Authorization": `Bearer ${token}` } });
-        showToast(`Request sent to ${username}`, "success");
-        handleSearch({target: {value: document.getElementById("search-input").value}});
-    }
-
-    async function acceptRequest(id) {
-        await fetch(`/friends/accept/${id}`, { method: "POST", headers: { "Authorization": `Bearer ${token}` } });
-        showToast("Friend added!", "success");
-        loadSidebar();
-    }
 
         // --- CHAT ---
     function startChat(friend, element) {
@@ -591,7 +448,7 @@
             document.getElementById("chat-title").innerText = friend.username;
             const statusEl = document.getElementById("chat-status");
             
-                // ✅ Using the exact 'is_online' property from your database/server
+                // âœ… Using the exact 'is_online' property from your database/server
             if (friend.is_online) {
                 statusEl.innerText = "Online";
                 statusEl.className = "status online";
@@ -603,7 +460,7 @@
             }
             //document.getElementById("chat-status").innerText = formatLastSeen(friend.last_seen);
             
-            // 🚨 CRITICAL: Wipe the "Welcome Screen" or old messages before loading new ones
+            // ðŸš¨ CRITICAL: Wipe the "Welcome Screen" or old messages before loading new ones
             document.getElementById("messages").innerHTML = "";
             
             document.getElementById("msg-input").disabled = false;
@@ -612,7 +469,7 @@
             connectWebSocket();
             sendSocketPayload({ type: "join", room: currentFriend });
             
-                    //console.log("📥 [STEP 3] Received typing signal from:", data.sender);
+                    //console.log("ðŸ“¥ [STEP 3] Received typing signal from:", data.sender);
                     
                     
 
@@ -640,7 +497,7 @@
                 indicator.style.display = "none";
             }, 3000); // 3000ms
         } else{
-            console.error("❌ [STEP 3 FAILED] Could not find #typing-indicator div in HTML");
+            console.error("âŒ [STEP 3 FAILED] Could not find #typing-indicator div in HTML");
         }
     }    
 
@@ -651,17 +508,17 @@
         // 1. Enable/Disable Send Button
         sendBtn.disabled = (input.value.trim() === "");
 
-        // 2. ✅ SEND TYPING SIGNAL
+        // 2. âœ… SEND TYPING SIGNAL
         // Only send if we have a friend selected and socket is open
         if (currentFriend) {
-            console.log("📤 [STEP 1] Sending typing signal to:", currentFriend);
+            console.log("ðŸ“¤ [STEP 1] Sending typing signal to:", currentFriend);
 
             sendSocketPayload({
                 type: "typing",
                 room: currentFriend // Tells server who to notify
             });
         } else if (ws) {
-            console.warn("⚠️ [STEP 1 FAILED] Cannot send. Friend selected:", currentFriend, "WS State:", ws.readyState);
+            console.warn("âš ï¸ [STEP 1 FAILED] Cannot send. Friend selected:", currentFriend, "WS State:", ws.readyState);
         }
     }
     function send() {

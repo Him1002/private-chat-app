@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 # from fastapi.security import OAuth2PasswordBearer
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi import WebSocket, WebSocketDisconnect
@@ -11,6 +11,8 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from fastapi import Query
 import json
+import shutil
+import uuid
 from datetime import datetime, UTC
 from database import engine
 from models import User, Friend, Message
@@ -22,11 +24,16 @@ from database import get_db
 
 app = FastAPI()
 
+# ✅ NEW: A simple set to track the IDs of everyone currently connected
+online_users = {}
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 @app.get("/")
 def frontend():
-    return FileResponse("static/index5.html")
+    return FileResponse("static/index1.html")
 
 User.metadata.create_all(bind=engine)
 
@@ -42,32 +49,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 security = HTTPBearer()
 
-# friends = {
-#     "him": ["alex"],
-#     "alex": ["him"]
-# }
-
-# room_permissions = {
-#     "friends": ["him", "alex"]
-# }
-
-# TEMP user (we will replace this later with DB)
-# fake_user_db = {
-#     "him": {
-#         "username": "him",
-#         "password_hash": pwd_context.hash("1234")
-#     },
-
-#     "bob": {
-#         "username": "bob",
-#         "password_hash": pwd_context.hash("1234")
-#     },
-
-#     "alex": {
-#         "username": "alex",
-#         "password_hash": pwd_context.hash("1234")
-#     }
-# }
 
 # ================= UTILS =================
 def verify_password(plain, hashed):
@@ -181,8 +162,20 @@ def read_me(username: str = Depends(get_current_user)):
 
 # ================= WEBSOCKET CHAT =================
 
-active_connections = []
 rooms = {}  # room_name -> list of (websocket, username)
+
+def remove_connection_from_rooms(websocket: WebSocket):
+    empty_rooms = []
+
+    for room_id, members in rooms.items():
+        rooms[room_id] = [
+            (conn, member) for conn, member in members if conn != websocket
+        ]
+        if not rooms[room_id]:
+            empty_rooms.append(room_id)
+
+    for room_id in empty_rooms:
+        del rooms[room_id]
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket,
@@ -196,8 +189,9 @@ async def websocket_endpoint(websocket: WebSocket,
         await websocket.close(code=1008)
         return
 
-    username = user.username
-    print(f"{username} connected")
+    # ✅ CLOCK IN: Mark as globally online
+    online_users[user.id] = online_users.get(user.id, 0) + 1
+    print(f"{user.username} connected (Online)")
 
     try:
         while True:
@@ -207,6 +201,26 @@ async def websocket_endpoint(websocket: WebSocket,
             # print("Received:", data)
 
             msg_type = data.get("type")
+
+            # ✅ UPDATE ACTIVITY: Keep them "Fresh" in DB while chatting
+            # (updates Last Seen timestamp without waiting for disconnect)
+            user.last_seen = datetime.now(UTC)
+            db.commit()
+
+            # ---------------- TYPING SIGNAL (New) ----------------
+            if msg_type == "typing":
+                friend_username = data.get("room")
+                # Calculate room ID to find the socket
+                room_id = get_dm_room(user.username, friend_username)
+                
+                if room_id in rooms:
+                    for conn, member in rooms[room_id]:
+                        if member.id != user.id: # Don't send to self
+                            await conn.send_text(json.dumps({
+                                "type": "typing",
+                                "sender": user.username
+                            }))
+                continue # Skip saving to DB
 
             # ---------------- JOIN ROOM ----------------
             if msg_type == "join":
@@ -229,6 +243,8 @@ async def websocket_endpoint(websocket: WebSocket,
 
                 room_id = get_dm_room(user.username, friend.username)
 
+                remove_connection_from_rooms(websocket)
+
                 if room_id not in rooms:
                     rooms[room_id] = []
 
@@ -248,20 +264,22 @@ async def websocket_endpoint(websocket: WebSocket,
                     await websocket.send_text(json.dumps({
                         "type": "chat",
                         "sender": sender_name,
-                        "text": msg.content
+                        "text": msg.content,
+                        "image_url": msg.image_url
                     }))
                 # ==========================================
 
-                await websocket.send_text(json.dumps({
-                    "type": "system",
-                    "message": f"Connected to secure channel with {friend.username}"
-                }))
+                # await websocket.send_text(json.dumps({
+                #     "type": "system",
+                #     "message": f"Connected to secure channel with {friend.username}"
+                # }))
 
 
             # ---------------- CHAT MESSAGE ----------------
             elif msg_type == "chat":
                 friend_username = data.get("room") # Frontend says "alex"
                 text = data.get("text")
+                img_url = data.get("image_url")
 
                 # 1. Find the friend object again to get their ID
                 friend = db.query(User).filter(User.username == friend_username).first()
@@ -276,6 +294,7 @@ async def websocket_endpoint(websocket: WebSocket,
                     sender_id=user.id,
                     receiver_id=friend.id,
                     content=text,
+                    image_url=img_url,
                     timestamp=datetime.now(UTC)
                 )
                 db.add(new_msg)
@@ -287,6 +306,7 @@ async def websocket_endpoint(websocket: WebSocket,
                     "type": "chat",
                     "sender": user.username,
                     "text": text,
+                    "image_url": img_url,
                     "timestamp": new_msg.timestamp.isoformat()
                 }
 
@@ -300,18 +320,25 @@ async def websocket_endpoint(websocket: WebSocket,
                     # Logic for when friend is OFFLINE:
                     # We already saved to DB, so just echo back to sender so they see their own msg
                     await websocket.send_text(json.dumps(message_payload))
-
+            
+            # ✅ NEW: Typing Handler
     except WebSocketDisconnect:
-        for room_id, members in rooms.items():
-            rooms[room_id] = [
-                (conn, user) for conn, user in members if conn != websocket
-            ]
+        # ✅ CLOCK OUT: Remove from global online list
+        connection_count = online_users.get(user.id, 0)
+        if connection_count <= 1:
+            online_users.pop(user.id, None)
+        else:
+            online_users[user.id] = connection_count - 1
+
+        remove_connection_from_rooms(websocket)
 
         # 2. ✅ Update Last Seen in DB
-        user.last_seen = datetime.now(UTC)
-        db.commit()
-
-        print(f"{user.username} disconnected (Last seen updated)")
+        if connection_count <= 1:
+            user.last_seen = datetime.now(UTC)
+            db.commit()
+            print(f"{user.username} disconnected (Offline)")
+        else:
+            print(f"{user.username} disconnected one tab ({online_users[user.id]} remaining)")
 
 @app.get("/search")
 def search_users(
@@ -443,12 +470,28 @@ def get_friends_list(
 
     results = []
     for f in friendships:
-        friend_user = db.query(User).filter(User.id == f.friend_id).first()
+        fid = f.friend_id if f.user_id == current_user.id else f.user_id
+        friend_user = db.query(User).filter(User.id == fid).first()
         if friend_user:
+            # ✅ THE FIX: Check the global 'online_users' set
+            is_active = friend_user.id in online_users
+
             results.append({
                 "username": friend_user.username,
                 # Send the timestamp to the frontend
-                "last_seen": friend_user.last_seen.isoformat() if friend_user.last_seen else None
+                "last_seen": friend_user.last_seen,
+                "is_online": is_active  # <--- Sending the Truth!
                 })
     
     return results
+
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):
+    file_ext = file.filename.split(".")[-1]
+    filename = f"{uuid.uuid4()}.{file_ext}"
+    file_path = f"uploads/{filename}"
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    return {"url": f"/uploads/{filename}"}

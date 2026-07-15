@@ -26,4 +26,5 @@ class Message(Base):
     sender_id = Column(Integer, ForeignKey("users.id"))
     receiver_id = Column(Integer, ForeignKey("users.id"))
     content = Column(String)
+    image_url = Column(String, nullable=True)
     timestamp = Column(DateTime, default=datetime.now(UTC))

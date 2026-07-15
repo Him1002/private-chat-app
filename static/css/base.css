@@ -1,0 +1,3 @@
+/* --- RESET & BASICS --- */
+body { font-family: 'Segoe UI', system-ui, sans-serif; background-color: #121212; color: #e0e0e0; margin: 0; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+* { box-sizing: border-box; }

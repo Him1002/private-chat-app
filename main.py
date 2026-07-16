@@ -20,6 +20,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from database import get_db
 
+# Import configuration
+from backend.core.config import settings
 
 
 app = FastAPI()
@@ -27,21 +29,15 @@ app = FastAPI()
 # ✅ NEW: A simple set to track the IDs of everyone currently connected
 online_users = {}
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=settings.STATIC_DIR), name="static")
 
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount("/uploads", StaticFiles(directory=settings.UPLOADS_DIR), name="uploads")
 
 @app.get("/")
 def frontend():
     return FileResponse("static/index.html")
 
 User.metadata.create_all(bind=engine)
-
-
-# ================= CONFIG =================
-SECRET_KEY = "super-secret-key-change-later"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 
 # Password hashing setup
@@ -58,7 +54,7 @@ def create_access_token(data: dict, expires_delta: timedelta):
     to_encode = data.copy()
     expire = datetime.utcnow() + expires_delta
     to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 def get_current_user(
     creds: HTTPAuthorizationCredentials = Depends(security),
@@ -66,7 +62,7 @@ def get_current_user(
 ):
     try:
         token = creds.credentials
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         username = payload.get("sub")
         user = db.query(User).filter(User.username == username).first()
         if not user:
@@ -80,7 +76,7 @@ def get_current_user(
     
 def verify_ws_token(token: str, db: Session):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         username = payload.get("sub")
         if not username:
             return None
@@ -129,7 +125,7 @@ def login(
 
     token = create_access_token(
         data={"sub": user.username},
-        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
 
     return {"access_token": token}
@@ -489,9 +485,9 @@ def get_friends_list(
 async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):
     file_ext = file.filename.split(".")[-1]
     filename = f"{uuid.uuid4()}.{file_ext}"
-    file_path = f"uploads/{filename}"
+    file_path = f"{settings.UPLOADS_DIR}/{filename}"
 
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    return {"url": f"/uploads/{filename}"}
+    return {"url": f"/{settings.UPLOADS_DIR}/{filename}"}

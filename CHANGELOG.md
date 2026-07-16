@@ -12,3 +12,22 @@
 
 Status:
 Completed
+
+
+## v2.0.0-alpha.1
+
+### Frontend Modernization
+
+- Standardized frontend entry point.
+- Introduced CSS architecture.
+- Added design tokens.
+- Modularized JavaScript.
+- Extracted:
+  - Core
+  - Utilities
+  - Authentication
+  - Sidebar
+  - WebSocket
+  - Chat
+  - Upload
+- Improved maintainability.

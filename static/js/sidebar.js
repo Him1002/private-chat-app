@@ -25,8 +25,8 @@ async function loadSidebar() {
 
     // fetch data
     const [reqRes, friendRes] = await Promise.all([
-        fetch("/friends/requests", { headers: { "Authorization": `****** } }),
-        fetch("/friends", { headers: { "Authorization": `****** } })
+        fetch("/friends/requests", {headers: {"Authorization": `Bearer ${token}`}}),
+        fetch("/friends", {headers: {"Authorization": `Bearer ${token}`}})
     ]);
 
     if (!reqRes.ok || !friendRes.ok) return;
@@ -77,7 +77,7 @@ async function handleSearch(e) {
     const query = e.target.value;
     if (!query) return loadSidebar(); 
 
-    const res = await fetch(`/search?query=${query}`, { headers: { "Authorization": `****** } });
+    const res = await fetch(`/search?query=${query}`, {headers: {"Authorization": `Bearer ${token}`}});
     const results = await res.json();
     const list = document.getElementById("list-area");
     list.innerHTML = "";
@@ -131,13 +131,13 @@ function renderFriendItem(container, f) {
 }
 
 async function addFriend(username) {
-    await fetch(`/friends/request/${username}`, { method: "POST", headers: { "Authorization": `****** } });
+    await fetch(`/friends/request/${username}`, { method: "POST", headers: {"Authorization": `Bearer ${token}`}} );
     showToast(`Request sent to ${username}`, "success");
     handleSearch({target: {value: document.getElementById("search-input").value}});
 }
 
 async function acceptRequest(id) {
-    await fetch(`/friends/accept/${id}`, { method: "POST", headers: { "Authorization": `****** } });
+    await fetch(`/friends/accept/${id}`, { method: "POST", headers: {"Authorization": `Bearer ${token}`} });
     showToast("Friend added!", "success");
     loadSidebar();
 }

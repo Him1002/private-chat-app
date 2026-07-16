@@ -14,7 +14,9 @@ async function handleFileUpload(inputElement) {
         showToast("Uploading...", "normal");
         const res = await fetch("/upload", {
             method: "POST",
-            headers: { "Authorization": `****** },
+            headers: {
+                "Authorization": `Bearer ${token}`
+            },
             body: formData
         });
         

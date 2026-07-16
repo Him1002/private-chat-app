@@ -1,0 +1,3 @@
+"""
+FastAPI dependency injection module.
+"""

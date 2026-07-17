@@ -1,27 +1,30 @@
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
-# from fastapi.security import OAuth2PasswordBearer
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from jose import jwt, JWTError
-from passlib.context import CryptContext
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from fastapi import Query
 import json
 import shutil
 import uuid
-from datetime import datetime, UTC
 from database import engine
 from models import User, Friend, Message
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from database import get_db
 
-# Import configuration
+# Import configuration and security utilities
 from backend.core.config import settings
+from backend.core.security import (
+    pwd_context,
+    security,
+    verify_password,
+    create_access_token,
+    get_current_user,
+    verify_ws_token,
+)
 
 
 app = FastAPI()
@@ -40,51 +43,7 @@ def frontend():
 User.metadata.create_all(bind=engine)
 
 
-# Password hashing setup
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-# oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-security = HTTPBearer()
-
-
 # ================= UTILS =================
-def verify_password(plain, hashed):
-    return pwd_context.verify(plain, hashed)
-
-def create_access_token(data: dict, expires_delta: timedelta):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + expires_delta
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-
-def get_current_user(
-    creds: HTTPAuthorizationCredentials = Depends(security),
-     db: Session = Depends(get_db)
-):
-    try:
-        token = creds.credentials
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        username = payload.get("sub")
-        user = db.query(User).filter(User.username == username).first()
-        if not user:
-            raise HTTPException(status_code=401)
-        return user
-        # if username not in fake_user_db:
-        #     raise HTTPException(status_code=401)
-        # return username
-    except JWTError:
-        raise HTTPException(status_code=401)
-    
-def verify_ws_token(token: str, db: Session):
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        username = payload.get("sub")
-        if not username:
-            return None
-        return db.query(User).filter(User.username == username).first()
-    except JWTError:
-        return None
-
-
 def are_friends(db: Session, user_id: int, friend_id: int) -> bool:
     return db.query(Friend).filter(
         Friend.user_id == user_id,

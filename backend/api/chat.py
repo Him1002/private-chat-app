@@ -1,14 +1,13 @@
-from datetime import datetime, UTC
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from backend.core.security import get_current_user
 from backend.db.database import get_db
-from backend.db.models import Friend, Message, User
+from backend.db.models import User
+from backend.services import chat_service
 
 router = APIRouter()
 
@@ -16,33 +15,6 @@ router = APIRouter()
 class MessageCreate(BaseModel):
     text: Optional[str] = None
     image_url: Optional[str] = None
-
-
-def _ensure_friendship(db: Session, current_user: User, friend: User) -> None:
-    is_friend = (
-        db.query(Friend)
-        .filter(
-            ((Friend.user_id == current_user.id) & (Friend.friend_id == friend.id))
-            | ((Friend.user_id == friend.id) & (Friend.friend_id == current_user.id)),
-            Friend.status == "accepted",
-        )
-        .first()
-        is not None
-    )
-
-    if not is_friend:
-        raise HTTPException(status_code=404, detail="Friend not found")
-
-
-def _message_to_dict(message: Message, current_user: User, friend: User) -> dict:
-    return {
-        "id": message.id,
-        "sender": current_user.username if message.sender_id == current_user.id else friend.username,
-        "receiver": friend.username if message.sender_id == current_user.id else current_user.username,
-        "content": message.content,
-        "image_url": message.image_url,
-        "timestamp": message.timestamp.isoformat() if message.timestamp else None,
-    }
 
 
 @router.get("/chats")
@@ -53,40 +25,10 @@ def list_conversations(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    friendships = (
-        db.query(Friend)
-        .filter(Friend.user_id == current_user.id, Friend.status == "accepted")
-        .all()
-    )
-
-    conversations = []
-    for friendship in friendships:
-        friend = db.query(User).filter(User.id == friendship.friend_id).first()
-        if not friend:
-            continue
-
-        last_message = (
-            db.query(Message)
-            .filter(
-                or_(
-                    (Message.sender_id == current_user.id) & (Message.receiver_id == friend.id),
-                    (Message.sender_id == friend.id) & (Message.receiver_id == current_user.id),
-                )
-            )
-            .order_by(Message.timestamp.desc())
-            .first()
-        )
-
-        conversations.append(
-            {
-                "username": friend.username,
-                "last_message": last_message.content if last_message else None,
-                "last_message_time": last_message.timestamp.isoformat() if last_message else None,
-                "unread_count": 0,
-            }
-        )
-
-    return conversations
+    try:
+        return chat_service.list_conversations(db, current_user)
+    except chat_service.NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.get("/chat/history/{friend_username}")
@@ -97,25 +39,10 @@ def get_chat_history(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    friend = db.query(User).filter(User.username == friend_username).first()
-    if not friend:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    _ensure_friendship(db, current_user, friend)
-
-    messages = (
-        db.query(Message)
-        .filter(
-            or_(
-                (Message.sender_id == current_user.id) & (Message.receiver_id == friend.id),
-                (Message.sender_id == friend.id) & (Message.receiver_id == current_user.id),
-            )
-        )
-        .order_by(Message.timestamp.asc())
-        .all()
-    )
-
-    return [_message_to_dict(message, current_user, friend) for message in messages]
+    try:
+        return chat_service.get_chat_history(db, current_user, friend_username)
+    except chat_service.NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.post("/messages/{friend_username}")
@@ -127,27 +54,12 @@ async def send_message(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    friend = db.query(User).filter(User.username == friend_username).first()
-    if not friend:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    _ensure_friendship(db, current_user, friend)
-
-    if not data.text and not data.image_url:
-        raise HTTPException(status_code=400, detail="Message body cannot be empty")
-
-    message = Message(
-        sender_id=current_user.id,
-        receiver_id=friend.id,
-        content=data.text,
-        image_url=data.image_url,
-        timestamp=datetime.now(UTC),
-    )
-    db.add(message)
-    db.commit()
-    db.refresh(message)
-
-    return _message_to_dict(message, current_user, friend)
+    try:
+        return chat_service.send_message(db, current_user, friend_username, data.text, data.image_url)
+    except chat_service.NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except chat_service.BadRequestError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/messages/{message_id}/read")
@@ -157,14 +69,10 @@ def mark_messages_read(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    message = db.query(Message).filter(Message.id == message_id).first()
-    if not message:
-        raise HTTPException(status_code=404, detail="Message not found")
-
-    if message.receiver_id != current_user.id and message.sender_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Message not found")
-
-    return {"msg": "Message marked as read"}
+    try:
+        return chat_service.mark_messages_read(db, current_user, message_id)
+    except chat_service.NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.delete("/messages/{message_id}")
@@ -174,14 +82,7 @@ def delete_message(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    message = db.query(Message).filter(Message.id == message_id).first()
-    if not message:
-        raise HTTPException(status_code=404, detail="Message not found")
-
-    if message.sender_id != current_user.id and message.receiver_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Message not found")
-
-    db.delete(message)
-    db.commit()
-
-    return {"msg": "Message deleted"}
+    try:
+        return chat_service.delete_message(db, current_user, message_id)
+    except chat_service.NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))

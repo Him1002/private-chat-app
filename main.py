@@ -67,52 +67,10 @@ def load_rooms_from_db():
 load_rooms_from_db()
 
 
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
 # ================= ROUTES =================
-@app.post("/login")
-def login(
-    data: LoginRequest,
-    db: Session = Depends(get_db)
-):
-    user = db.query(User).filter(User.username == data.username).first()
+from backend.api.auth import router as auth_router
 
-    if not user or not verify_password(data.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    token = create_access_token(
-        data={"sub": user.username},
-        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    )
-
-    return {"access_token": token}
-
-@app.post("/register")
-def register(
-    data: LoginRequest,
-    db: Session = Depends(get_db)
-):
-    # 1. Check if username exists
-    existing_user = db.query(User).filter(User.username == data.username).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Username already taken")
-
-    # 2. Create new user
-    new_user = User(
-        username=data.username,
-        password_hash=pwd_context.hash(data.password),
-        last_seen=datetime.now(UTC)
-    )
-    db.add(new_user)
-    db.commit()
-
-    return {"msg": "User created successfully"}
-
-@app.get("/me")
-def read_me(username: str = Depends(get_current_user)):
-    return {"username": username}
+app.include_router(auth_router)
 
 
 # ================= WEBSOCKET CHAT =================

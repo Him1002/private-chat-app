@@ -132,8 +132,8 @@ def get_friends_list(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    main = import_module("main")
-    online_users = main.online_users
+    ws_mod = import_module("backend.realtime.websocket")
+    online_users = ws_mod.online_users
     # Get all accepted friendships
     friendships = db.query(Friend).filter(
         Friend.user_id == current_user.id,

@@ -1,5 +1,6 @@
-from database import SessionLocal, engine
-from models import User, Friend, Base
+from backend.db.database import SessionLocal, engine
+from backend.db.models import User, Friend
+from backend.db.database import Base
 from passlib.context import CryptContext
 
 # 1. Create Tables

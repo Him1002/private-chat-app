@@ -9,11 +9,11 @@ from fastapi import Query
 import json
 import shutil
 import uuid
-from database import engine
-from models import User, Friend, Message
+from backend.db.database import engine
+from backend.db.models import User, Friend, Message
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from database import get_db
+from backend.db.database import get_db
 
 # Import configuration and security utilities
 from backend.core.config import settings

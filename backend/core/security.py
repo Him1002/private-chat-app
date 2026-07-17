@@ -13,8 +13,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from backend.core.config import settings
-from database import get_db
-from models import User
+from backend.db.database import get_db
+from backend.db.models import User
 
 
 # Password hashing setup

@@ -37,17 +37,6 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
-def get_password_hash(password: str) -> str:
-    """
-    Hash a password using bcrypt.
-    
-    Args:
-        password: The plain-text password to hash
-        
-    Returns:
-        The hashed password
-    """
-    return pwd_context.hash(password)
 
 
 # ================= JWT TOKEN UTILITIES =================

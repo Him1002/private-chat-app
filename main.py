@@ -1,30 +1,12 @@
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
 
-from datetime import datetime, timedelta, UTC
-from fastapi import Query
-import json
-import shutil
-import uuid
 from backend.db.database import engine
-from backend.db.models import User, Friend, Message
-from sqlalchemy.orm import Session
-from sqlalchemy import or_
-from backend.db.database import get_db
+from backend.db.models import User
 
-# Import configuration and security utilities
+# Import configuration
 from backend.core.config import settings
-from backend.core.security import (
-    pwd_context,
-    security,
-    verify_password,
-    create_access_token,
-    get_current_user,
-    verify_ws_token,
-)
 
 
 app = FastAPI()

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from importlib import import_module
-
+from backend.services.friend_service import are_friends
 from backend.db.database import get_db
 from backend.db.models import User, Friend
 from backend.core.security import get_current_user
@@ -15,9 +15,9 @@ def search_users(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Delay importing main to avoid circular imports
-    main = import_module("main")
-    are_friends = main.are_friends
+#   # Delay importing main to avoid circular imports
+#     main = import_module("main")
+#     are_friends = main.are_friend  s
 
     users = db.query(User).filter(
         User.username.contains(query),

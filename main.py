@@ -31,7 +31,7 @@ app = FastAPI()
 
 app.mount("/static", StaticFiles(directory=settings.STATIC_DIR), name="static")
 
-app.mount("/uploads", StaticFiles(directory=settings.UPLOADS_DIR), name="uploads")
+# Uploads static mount moved to backend/api/upload.py (register_uploads will mount it on the app)
 
 @app.get("/")
 def frontend():
@@ -58,13 +58,8 @@ from backend.api.friends import router as friends_router
 
 app.include_router(friends_router)
 
-@app.post("/upload")
-async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):
-    file_ext = file.filename.split(".")[-1]
-    filename = f"{uuid.uuid4()}.{file_ext}"
-    file_path = f"{settings.UPLOADS_DIR}/{filename}"
+from backend.api.upload import router as upload_router, register_uploads
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    return {"url": f"/{settings.UPLOADS_DIR}/{filename}"}
+app.include_router(upload_router)
+# Mount the uploads static directory (preserves previous behavior)
+register_uploads(app)

@@ -1,9 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, Depends
 from fastapi.staticfiles import StaticFiles
 
-import shutil
-import uuid
-
 from backend.core.config import settings
 from backend.core.security import get_current_user
 from backend.db.models import User
@@ -13,20 +10,15 @@ router = APIRouter()
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):
-    """Handle file uploads and return a URL to the saved file.
+    """Thin controller: validate request and delegate upload business logic to the service layer.
 
-    Behavior preserved from main.py: filename generation, path, and response format.
-    This function intentionally does not create the uploads directory to preserve
-    existing application behavior.
+    Preserves original behavior and response payload.
     """
-    file_ext = file.filename.split(".")[-1]
-    filename = f"{uuid.uuid4()}.{file_ext}"
-    file_path = f"{settings.UPLOADS_DIR}/{filename}"
+    # Delegate to service that contains filename generation and storage logic
+    from backend.services.upload_service import save_upload
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    return {"url": f"/{settings.UPLOADS_DIR}/{filename}"}
+    url = save_upload(file)
+    return {"url": url}
 
 
 def register_uploads(app):

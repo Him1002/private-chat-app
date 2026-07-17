@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -29,6 +29,65 @@ def _message_to_dict(message: Message, current_user: User, friend: User) -> dict
         "image_url": message.image_url,
         "timestamp": message.timestamp.isoformat() if message.timestamp else None,
     }
+
+
+def get_chat_friend(db: Session, current_user: User, friend_username: str) -> User:
+    friend = db.query(User).filter(User.username == friend_username).first()
+    if not friend:
+        raise NotFoundError("User not found")
+
+    if not are_friends(db, current_user.id, friend.id):
+        raise NotFoundError("Friend not found")
+
+    return friend
+
+
+def get_chat_messages(db: Session, current_user: User, friend_username: str) -> Tuple[User, List[Message]]:
+    friend = get_chat_friend(db, current_user, friend_username)
+
+    messages = (
+        db.query(Message)
+        .filter(
+            or_(
+                (Message.sender_id == current_user.id) & (Message.receiver_id == friend.id),
+                (Message.sender_id == friend.id) & (Message.receiver_id == current_user.id),
+            )
+        )
+        .order_by(Message.timestamp.asc())
+        .all()
+    )
+
+    return friend, messages
+
+
+def serialize_message_for_websocket(message: Message, current_user: User, friend: User, include_timestamp: bool = False) -> Dict:
+    payload = {
+        "type": "chat",
+        "sender": current_user.username if message.sender_id == current_user.id else friend.username,
+        "text": message.content,
+        "image_url": message.image_url,
+    }
+    if include_timestamp:
+        payload["timestamp"] = message.timestamp.isoformat() if message.timestamp else None
+    return payload
+
+
+def create_message(db: Session, sender: User, receiver: User, text: Optional[str], image_url: Optional[str]) -> Message:
+    if not text and not image_url:
+        raise BadRequestError("Message body cannot be empty")
+
+    message = Message(
+        sender_id=sender.id,
+        receiver_id=receiver.id,
+        content=text,
+        image_url=image_url,
+        timestamp=datetime.now(timezone.utc),
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+
+    return message
 
 
 def list_conversations(db: Session, current_user: User) -> List[Dict]:
@@ -84,49 +143,13 @@ def list_conversations(db: Session, current_user: User) -> List[Dict]:
 
 
 def get_chat_history(db: Session, current_user: User, friend_username: str) -> List[Dict]:
-    friend = db.query(User).filter(User.username == friend_username).first()
-    if not friend:
-        raise NotFoundError("User not found")
-
-    if not are_friends(db, current_user.id, friend.id):
-        raise NotFoundError("Friend not found")
-
-    messages = (
-        db.query(Message)
-        .filter(
-            or_(
-                (Message.sender_id == current_user.id) & (Message.receiver_id == friend.id),
-                (Message.sender_id == friend.id) & (Message.receiver_id == current_user.id),
-            )
-        )
-        .order_by(Message.timestamp.asc())
-        .all()
-    )
-
+    friend, messages = get_chat_messages(db, current_user, friend_username)
     return [_message_to_dict(message, current_user, friend) for message in messages]
 
 
 def send_message(db: Session, current_user: User, friend_username: str, text: Optional[str], image_url: Optional[str]) -> Dict:
-    friend = db.query(User).filter(User.username == friend_username).first()
-    if not friend:
-        raise NotFoundError("User not found")
-
-    if not are_friends(db, current_user.id, friend.id):
-        raise NotFoundError("Friend not found")
-
-    if not text and not image_url:
-        raise BadRequestError("Message body cannot be empty")
-
-    message = Message(
-        sender_id=current_user.id,
-        receiver_id=friend.id,
-        content=text,
-        image_url=image_url,
-        timestamp=datetime.now(timezone.utc),
-    )
-    db.add(message)
-    db.commit()
-    db.refresh(message)
+    friend = get_chat_friend(db, current_user, friend_username)
+    message = create_message(db, current_user, friend, text, image_url)
 
     return _message_to_dict(message, current_user, friend)
 

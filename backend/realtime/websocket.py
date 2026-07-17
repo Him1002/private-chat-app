@@ -1,12 +1,12 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
 from datetime import datetime, UTC
 import json
 
 from backend.db.database import get_db
-from backend.db.models import User, Message, Friend
+from backend.db.models import User, Friend
 from backend.core.security import verify_ws_token
+from backend.services import chat_service
 
 router = APIRouter()
 
@@ -94,25 +94,13 @@ async def websocket_endpoint(websocket: WebSocket,
             if msg_type == "join":
                 friend_username = data.get("room")
 
-                friend = db.query(User).filter(User.username == friend_username).first()
-                if not friend:
+                try:
+                    friend = chat_service.get_chat_friend(db, user, friend_username)
+                except chat_service.NotFoundError as exc:
+                    message = "User does not exist" if str(exc) == "User not found" else "You are not friends"
                     await websocket.send_text(json.dumps({
                         "type": "error",
-                        "message": "User does not exist"
-                    }))
-                    continue
-
-                # Reuse Friend model check for friendship
-                is_friend = db.query(Friend).filter(
-                    Friend.user_id == user.id,
-                    Friend.friend_id == friend.id,
-                    Friend.status == "accepted"
-                ).first() is not None
-
-                if not is_friend:
-                    await websocket.send_text(json.dumps({
-                        "type": "error",
-                        "message": "You are not friends"
+                        "message": message
                     }))
                     continue
 
@@ -125,23 +113,11 @@ async def websocket_endpoint(websocket: WebSocket,
 
                 rooms[room_id].append((websocket, user))
 
-                # 4. (Optional) Load History - We will add this in the NEXT step
-                history = db.query(Message).filter(
-                    or_(
-                        (Message.sender_id == user.id) & (Message.receiver_id == friend.id),
-                        (Message.sender_id == friend.id) & (Message.receiver_id == user.id)
-                    )
-                ).order_by(Message.timestamp.asc()).all()
+                _, history_messages = chat_service.get_chat_messages(db, user, friend_username)
 
-                # Send past messages to THIS user only
-                for msg in history:
-                    sender_name = user.username if msg.sender_id == user.id else friend.username
-                    await websocket.send_text(json.dumps({
-                        "type": "chat",
-                        "sender": sender_name,
-                        "text": msg.content,
-                        "image_url": msg.image_url
-                    }))
+                for message in history_messages:
+                    payload = chat_service.serialize_message_for_websocket(message, user, friend, include_timestamp=False)
+                    await websocket.send_text(json.dumps(payload))
 
             # ---------------- CHAT MESSAGE ----------------
             elif msg_type == "chat":
@@ -149,43 +125,25 @@ async def websocket_endpoint(websocket: WebSocket,
                 text = data.get("text")
                 img_url = data.get("image_url")
 
-                # 1. Find the friend object again to get their ID
-                friend = db.query(User).filter(User.username == friend_username).first()
-                if not friend:
+                try:
+                    friend = chat_service.get_chat_friend(db, user, friend_username)
+                except chat_service.NotFoundError:
                     continue
 
-                # 2. Calculate the Canonical Room ID again
                 room_id = get_dm_room(user.username, friend.username)
 
-                # 3. SAVE TO DATABASE (Persistence!)
-                new_msg = Message(
-                    sender_id=user.id,
-                    receiver_id=friend.id,
-                    content=text,
-                    image_url=img_url,
-                    timestamp=datetime.now(UTC)
-                )
-                db.add(new_msg)
-                db.commit()
+                try:
+                    new_msg = chat_service.create_message(db, user, friend, text, img_url)
+                except chat_service.BadRequestError:
+                    continue
 
-                # 4. Construct Payload
-                message_payload = {
-                    "type": "chat",
-                    "sender": user.username,
-                    "text": text,
-                    "image_url": img_url,
-                    "timestamp": new_msg.timestamp.isoformat()
-                }
+                message_payload = chat_service.serialize_message_for_websocket(new_msg, user, friend, include_timestamp=True)
 
-                # 5. Broadcast (Only if room exists in memory)
                 if room_id in rooms:
                     for conn, target_user in rooms[room_id]:
-                        # Optional: Check strict permissions again if you want
                         await conn.send_text(json.dumps(message_payload))
 
                 else:
-                    # Logic for when friend is OFFLINE:
-                    # We already saved to DB, so just echo back to sender so they see their own msg
                     await websocket.send_text(json.dumps(message_payload))
 
     except WebSocketDisconnect:

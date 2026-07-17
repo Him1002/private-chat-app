@@ -131,7 +131,7 @@ async def websocket_endpoint(websocket: WebSocket,
                         (Message.sender_id == user.id) & (Message.receiver_id == friend.id),
                         (Message.sender_id == friend.id) & (Message.receiver_id == user.id)
                     )
-                ).order_by(Message.timestamp.asc()).limit(50).all()
+                ).order_by(Message.timestamp.asc()).all()
 
                 # Send past messages to THIS user only
                 for msg in history:

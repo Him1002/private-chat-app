@@ -64,7 +64,18 @@ function handleSocketMessage(e) {
     if (data.type === "chat") {
         const indicators = document.querySelectorAll("#typing-indicator, .typing-indicator");
         indicators.forEach(ind => ind.style.display = "none");
-        addMessage(data.sender, data.text, data.image_url, data.timestamp, data.id, data.status, data.read_at);
+        addMessage(data.sender, data.text, data.image_url, data.timestamp, data.id, data.status, data.read_at, data.edited_at, data.is_deleted, data.deleted_at);
+    } else if (data.type === "message_updated") {
+        if (typeof updateMessageContent === "function") {
+            updateMessageContent(data.id, data.text, data.edited_at);
+        }
+        if (typeof updateMessageStatus === "function") {
+            updateMessageStatus(data.id, data.status, data.read_at);
+        }
+    } else if (data.type === "message_deleted") {
+        if (typeof updateDeletedMessage === "function") {
+            updateDeletedMessage(data.id, data.text, data.deleted_at);
+        }
     } else if (data.type === "typing") {
         if (data.sender === currentFriend) {
             const statusEl = document.getElementById("chat-status");

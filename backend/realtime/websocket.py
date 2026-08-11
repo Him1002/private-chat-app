@@ -181,6 +181,130 @@ async def websocket_endpoint(websocket: WebSocket,
                 if not sender_received:
                     await websocket.send_text(json.dumps(message_payload))
 
+            # ---------------- DELETE MESSAGE ----------------
+            elif msg_type == "message_delete":
+                message_id = data.get("message_id")
+                try:
+                    message_id = int(message_id)
+                except (TypeError, ValueError):
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Invalid message id",
+                    }))
+                    continue
+
+                try:
+                    chat_service.delete_message(db, user, message_id)
+                except chat_service.NotFoundError as exc:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": str(exc),
+                    }))
+                    continue
+                except chat_service.ForbiddenError as exc:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": str(exc),
+                    }))
+                    continue
+                except chat_service.BadRequestError as exc:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": str(exc),
+                    }))
+                    continue
+
+                deleted_message = db.query(chat_service.Message).filter(chat_service.Message.id == message_id).first()
+                if not deleted_message:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Message not found",
+                    }))
+                    continue
+
+                friend_id = deleted_message.receiver_id if deleted_message.sender_id == user.id else deleted_message.sender_id
+                friend = db.query(User).filter(User.id == friend_id).first()
+                if not friend:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "User not found",
+                    }))
+                    continue
+
+                room_id = get_dm_room(user.username, friend.username)
+                delete_payload = chat_service.serialize_message_for_websocket(
+                    deleted_message,
+                    user,
+                    friend,
+                    event_type="message_deleted",
+                )
+
+                if room_id in rooms:
+                    for conn, target_user in rooms[room_id]:
+                        await conn.send_text(json.dumps(delete_payload))
+                else:
+                    await websocket.send_text(json.dumps(delete_payload))
+
+            # ---------------- EDIT MESSAGE ----------------
+            elif msg_type == "message_edit":
+                message_id = data.get("message_id")
+                text = data.get("text")
+                try:
+                    message_id = int(message_id)
+                except (TypeError, ValueError):
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Invalid message id",
+                    }))
+                    continue
+
+                try:
+                    updated_message = chat_service.edit_message(db, user, message_id, text)
+                except chat_service.NotFoundError as exc:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": str(exc),
+                    }))
+                    continue
+                except chat_service.ForbiddenError as exc:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": str(exc),
+                    }))
+                    continue
+                except chat_service.BadRequestError as exc:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": str(exc),
+                    }))
+                    continue
+
+                friend = db.query(User).filter(User.id == updated_message.receiver_id).first()
+                if not friend:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "User not found",
+                    }))
+                    continue
+
+                room_id = get_dm_room(user.username, friend.username)
+                updated_payload = chat_service.serialize_message_for_websocket(
+                    updated_message,
+                    user,
+                    friend,
+                    event_type="message_updated",
+                )
+
+                sent_to_sender = False
+                if room_id in rooms:
+                    for conn, target_user in rooms[room_id]:
+                        await conn.send_text(json.dumps(updated_payload))
+                        if target_user.id == user.id:
+                            sent_to_sender = True
+
+                if not sent_to_sender:
+                    await websocket.send_text(json.dumps(updated_payload))
+
     except WebSocketDisconnect:
         # ✅ CLOCK OUT: Remove from global online list
         connection_count = online_users.get(user.id, 0)

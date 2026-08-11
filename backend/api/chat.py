@@ -17,6 +17,10 @@ class MessageCreate(BaseModel):
     image_url: Optional[str] = None
 
 
+class MessageUpdate(BaseModel):
+    text: str
+
+
 @router.get("/chats")
 @router.get("/conversations")
 @router.get("/chat/list")
@@ -86,3 +90,26 @@ def delete_message(
         return chat_service.delete_message(db, current_user, message_id)
     except chat_service.NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except chat_service.ForbiddenError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except chat_service.BadRequestError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/messages/{message_id}")
+@router.patch("/chat/messages/{message_id}")
+def edit_message(
+    message_id: int,
+    data: MessageUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        message = chat_service.edit_message(db, current_user, message_id, data.text)
+        return chat_service.serialize_message_for_api(db, current_user, message)
+    except chat_service.NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except chat_service.ForbiddenError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except chat_service.BadRequestError as e:
+        raise HTTPException(status_code=400, detail=str(e))

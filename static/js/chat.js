@@ -1,5 +1,8 @@
+let activeMessageEdit = null;
+
 function startChat(friend, element) {
         //console.log("Friend Object Data:", friend);
+        cancelMessageEdit(true);
         currentFriend = friend.username;
         
         // UI Updates
@@ -84,13 +87,231 @@ function handleInput() {
 }
 function send() {
     const input = document.getElementById("msg-input");
-    if (!input.value || !currentFriend) return;
+    if (!currentFriend) return;
+
+    if (activeMessageEdit) {
+        const updatedText = input.value.trim();
+        if (!updatedText) {
+            showToast("Message text cannot be empty", "normal");
+            return;
+        }
+
+        const sent = sendSocketPayload({
+            type: "message_edit",
+            room: currentFriend,
+            message_id: activeMessageEdit.messageId,
+            text: updatedText,
+        });
+        if (!sent) {
+            showToast("Reconnecting chat...", "normal");
+        }
+        return;
+    }
+
+    if (!input.value) return;
     const sent = sendSocketPayload({ type: "chat", room: currentFriend, text: input.value });
     if (!sent) {
         showToast("Reconnecting chat...", "normal");
         return;
     }
     input.value = "";
+}
+
+function updateComposerForEditMode() {
+    const input = document.getElementById("msg-input");
+    const sendBtn = document.getElementById("send-btn");
+    const banner = document.getElementById("edit-mode-banner");
+
+    if (!input || !sendBtn || !banner) return;
+
+    if (activeMessageEdit) {
+        banner.style.display = "flex";
+        sendBtn.innerText = "✔";
+        sendBtn.title = "Save edit";
+        input.placeholder = "Edit message...";
+    } else {
+        banner.style.display = "none";
+        sendBtn.innerHTML = "&#10148;";
+        sendBtn.title = "Send message";
+        input.placeholder = "Message...";
+    }
+}
+
+function isMessageDeleted(messageEl) {
+    if (!messageEl) return false;
+    return messageEl.dataset.isDeleted === "true" || Boolean(messageEl.dataset.deletedAt);
+}
+
+function canEditMessage(messageEl) {
+    if (!messageEl || !messageEl.classList.contains("me") || isMessageDeleted(messageEl)) return false;
+    const messageText = (messageEl.dataset.text || "").trim();
+    return Boolean(messageText);
+}
+
+function canDeleteMessage(messageEl) {
+    if (!messageEl || !messageEl.classList.contains("me")) return false;
+    return !isMessageDeleted(messageEl);
+}
+
+function applyDeletedState(messageEl, deletedAt) {
+    if (!messageEl) return;
+
+    const deletedText = "This message was deleted";
+    messageEl.dataset.isDeleted = "true";
+    messageEl.dataset.deletedAt = deletedAt || messageEl.dataset.deletedAt || "";
+    messageEl.dataset.text = deletedText;
+
+    const imageEl = messageEl.querySelector("img");
+    if (imageEl) imageEl.remove();
+
+    const editedEl = messageEl.querySelector(".msg-edited");
+    if (editedEl) editedEl.remove();
+
+    let textEl = messageEl.querySelector(".msg-text");
+    if (!textEl) {
+        textEl = document.createElement("span");
+        textEl.className = "msg-text";
+        const timeEl = messageEl.querySelector(".msg-time");
+        if (timeEl) {
+            messageEl.insertBefore(textEl, timeEl);
+        } else {
+            messageEl.appendChild(textEl);
+        }
+    }
+    textEl.textContent = deletedText;
+}
+
+function updateDeletedMessage(messageId, deletedText, deletedAt) {
+    if (!messageId) return;
+
+    const messageEl = document.querySelector(`.msg[data-message-id="${messageId}"]`);
+    if (!messageEl) return;
+
+    applyDeletedState(messageEl, deletedAt);
+    if (activeMessageEdit && String(activeMessageEdit.messageId) === String(messageId)) {
+        cancelMessageEdit(true);
+    }
+}
+
+function enterMessageEditMode(messageEl) {
+    if (!canEditMessage(messageEl)) {
+        showToast("Only your text messages can be edited", "normal");
+        return;
+    }
+
+    const input = document.getElementById("msg-input");
+    const messageText = messageEl.dataset.text || "";
+    const messageId = messageEl.dataset.messageId;
+    if (!input || !messageId) return;
+
+    activeMessageEdit = {
+        messageId,
+        originalText: messageText,
+    };
+
+    input.value = messageText;
+    updateComposerForEditMode();
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    document.getElementById("send-btn").disabled = (input.value.trim() === "");
+}
+
+function cancelMessageEdit(silent = false) {
+    if (!activeMessageEdit) return;
+
+    activeMessageEdit = null;
+    updateComposerForEditMode();
+
+    const input = document.getElementById("msg-input");
+    if (input) {
+        input.value = "";
+    }
+    handleInput();
+
+    if (!silent) {
+        showToast("Edit canceled", "normal");
+    }
+}
+
+function applyEditedIndicator(messageEl, editedAt) {
+    if (!messageEl) return;
+
+    const normalizedEditedAt = editedAt || "";
+    messageEl.dataset.editedAt = normalizedEditedAt;
+
+    let editedEl = messageEl.querySelector(".msg-edited");
+    if (!normalizedEditedAt) {
+        if (editedEl) editedEl.remove();
+        return;
+    }
+
+    if (!editedEl) {
+        editedEl = document.createElement("span");
+        editedEl.className = "msg-edited";
+        editedEl.textContent = "(edited)";
+        const timeEl = messageEl.querySelector(".msg-time");
+        if (timeEl) {
+            messageEl.insertBefore(editedEl, timeEl);
+        } else {
+            messageEl.appendChild(editedEl);
+        }
+    }
+}
+
+function applyMessageText(messageEl, text) {
+    if (!messageEl) return;
+    const normalizedText = text || "";
+    messageEl.dataset.text = normalizedText;
+
+    let textEl = messageEl.querySelector(".msg-text");
+    if (!normalizedText) {
+        if (textEl) textEl.remove();
+        return;
+    }
+
+    if (!textEl) {
+        textEl = document.createElement("span");
+        textEl.className = "msg-text";
+        const imageEl = messageEl.querySelector("img");
+        const editedEl = messageEl.querySelector(".msg-edited");
+        const timeEl = messageEl.querySelector(".msg-time");
+        if (imageEl) {
+            imageEl.insertAdjacentElement("afterend", textEl);
+        } else if (editedEl) {
+            messageEl.insertBefore(textEl, editedEl);
+        } else if (timeEl) {
+            messageEl.insertBefore(textEl, timeEl);
+        } else {
+            messageEl.appendChild(textEl);
+        }
+    }
+
+    textEl.textContent = normalizedText;
+}
+
+function updateMessageContent(messageId, text, editedAt) {
+    if (!messageId) return;
+
+    const messageEl = document.querySelector(`.msg[data-message-id="${messageId}"]`);
+    if (!messageEl) {
+        if (!window.pendingMessageEdits) {
+            window.pendingMessageEdits = {};
+        }
+        window.pendingMessageEdits[String(messageId)] = { text, editedAt };
+        return;
+    }
+
+    applyMessageText(messageEl, text);
+    applyEditedIndicator(messageEl, editedAt);
+
+    if (activeMessageEdit && String(activeMessageEdit.messageId) === String(messageId)) {
+        activeMessageEdit = null;
+        updateComposerForEditMode();
+        const input = document.getElementById("msg-input");
+        if (input) input.value = "";
+        handleInput();
+        showToast("Message updated", "normal");
+    }
 }
 
 function closeMessageActionMenu() {
@@ -103,6 +324,8 @@ function closeMessageActionMenu() {
 
 function openMessageActionMenu(messageEl, triggerEl) {
     closeMessageActionMenu();
+    const canEdit = canEditMessage(messageEl);
+    const canDelete = canDeleteMessage(messageEl);
 
     const menu = document.createElement("div");
     menu.className = "message-action-menu";
@@ -110,8 +333,8 @@ function openMessageActionMenu(messageEl, triggerEl) {
         <button type="button" class="message-action-item" data-action="copy">Copy Message</button>
         <button type="button" class="message-action-item" data-action="reply">Reply</button>
         <button type="button" class="message-action-item" data-action="react">React</button>
-        <button type="button" class="message-action-item" data-action="edit">Edit</button>
-        <button type="button" class="message-action-item" data-action="delete">Delete</button>
+        <button type="button" class="message-action-item${canEdit ? "" : " disabled"}" data-action="edit"${canEdit ? "" : " disabled"}>Edit</button>
+        <button type="button" class="message-action-item${canDelete ? "" : " disabled"}" data-action="delete"${canDelete ? "" : " disabled"}>Delete</button>
         <button type="button" class="message-action-item close" data-action="close">Close</button>
     `;
 
@@ -143,6 +366,32 @@ function openMessageActionMenu(messageEl, triggerEl) {
             } else {
                 showToast("Copy unavailable", "normal");
             }
+        } else if (action === "edit") {
+            if (!canEditMessage(messageEl)) {
+                showToast("Only your text messages can be edited", "normal");
+                closeMessageActionMenu();
+                return;
+            }
+            closeMessageActionMenu();
+            enterMessageEditMode(messageEl);
+            return;
+        } else if (action === "delete") {
+            if (!canDeleteMessage(messageEl)) {
+                showToast("Only your messages can be deleted", "normal");
+                closeMessageActionMenu();
+                return;
+            }
+
+            closeMessageActionMenu();
+            const sent = sendSocketPayload({
+                type: "message_delete",
+                room: currentFriend,
+                message_id: messageEl.dataset.messageId,
+            });
+            if (!sent) {
+                showToast("Reconnecting chat...", "normal");
+            }
+            return;
         } else if (action === "close") {
             closeMessageActionMenu();
             return;
@@ -226,35 +475,44 @@ function updateMessagesRead(messageIds, readAt) {
     });
 }
 
-function addMessage(sender, text, imageUrl, timestamp, messageId, status, readAt) {
+function addMessage(sender, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "") {
     const box = document.getElementById("messages");
     const isMe = sender === currentUser;
+    const deleted = Boolean(isDeleted || text === "This message was deleted");
+    const safeText = deleted ? "This message was deleted" : (text || "");
+    const safeImageUrl = deleted ? "" : imageUrl || "";
 
     const div = document.createElement("div");
     div.className = `msg ${isMe ? "me" : "friend"}`;
     div.dataset.messageId = messageId || "";
-    div.dataset.text = text || "";
-    div.dataset.imageUrl = imageUrl || "";
+    div.dataset.text = safeText;
+    div.dataset.imageUrl = safeImageUrl;
     div.dataset.status = normalizeMessageStatus(status, status === "read");
+    div.dataset.editedAt = editedAt || "";
+    div.dataset.isDeleted = deleted ? "true" : "false";
+    if (deletedAt) {
+        div.dataset.deletedAt = deletedAt;
+    }
     if (readAt) {
         div.dataset.readAt = readAt;
     }
 
     let contentHtml = "";
-    if (imageUrl) {
-        contentHtml += `<img src="${imageUrl}" onclick="window.open(this.src)" alt="message image">`;
+    if (!deleted && safeImageUrl) {
+        contentHtml += `<img src="${safeImageUrl}" onclick="window.open(this.src)" alt="message image">`;
     }
-    if (text) {
-        contentHtml += `<span class="msg-text">${text}</span>`;
+    if (safeText) {
+        contentHtml += `<span class="msg-text">${safeText}</span>`;
     }
 
     const nameHtml = isMe ? "" : `<span class="sender-name">${sender}</span>`;
+    const editedHtml = deleted ? "" : (editedAt ? `<span class="msg-edited">(edited)</span>` : "");
     const timeLabel = formatMessageTimestamp(timestamp);
     const timestampHtml = timeLabel ? `<span class="msg-time" style="display:none;">${timeLabel}</span>` : "";
     const statusHtml = isMe ? `<span class="msg-status"></span>` : "";
     const triggerHtml = `<button type="button" class="msg-menu-trigger" style="display:none;" aria-label="Open message actions">...</button>`;
 
-    div.innerHTML = nameHtml + contentHtml + timestampHtml + statusHtml + triggerHtml;
+    div.innerHTML = nameHtml + contentHtml + editedHtml + timestampHtml + statusHtml + triggerHtml;
 
     const trigger = div.querySelector(".msg-menu-trigger");
     if (trigger) {
@@ -272,6 +530,9 @@ function addMessage(sender, text, imageUrl, timestamp, messageId, status, readAt
     });
 
     box.appendChild(div);
+    if (deleted) {
+        applyDeletedState(div, deletedAt);
+    }
     if (isMe) {
         applyMessageStatus(div, div.dataset.status, readAt);
         if (window.pendingMessageStatuses) {
@@ -280,6 +541,14 @@ function addMessage(sender, text, imageUrl, timestamp, messageId, status, readAt
                 applyMessageStatus(div, pendingStatus.status, pendingStatus.readAt);
                 delete window.pendingMessageStatuses[String(messageId)];
             }
+        }
+    }
+    if (window.pendingMessageEdits) {
+        const pendingEdit = window.pendingMessageEdits[String(messageId)];
+        if (pendingEdit) {
+            applyMessageText(div, pendingEdit.text);
+            applyEditedIndicator(div, pendingEdit.editedAt);
+            delete window.pendingMessageEdits[String(messageId)];
         }
     }
     box.scrollTop = box.scrollHeight;

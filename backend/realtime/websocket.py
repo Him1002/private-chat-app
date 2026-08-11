@@ -119,6 +119,21 @@ async def websocket_endpoint(websocket: WebSocket,
                     payload = chat_service.serialize_message_for_websocket(message, user, friend)
                     await websocket.send_text(json.dumps(payload))
 
+                newly_read_messages = chat_service.mark_conversation_messages_read(db, user, friend)
+                if newly_read_messages:
+                    message_ids = [message.id for message in newly_read_messages]
+                    read_at = newly_read_messages[0].read_at
+                    read_payload = {
+                        "type": "messages_read",
+                        "message_ids": message_ids,
+                        "read_at": read_at.isoformat().replace("+00:00", "Z") if read_at else None,
+                        "reader": user.username,
+                    }
+                    if room_id in rooms:
+                        for conn, target_user in rooms[room_id]:
+                            if target_user.id == friend.id:
+                                await conn.send_text(json.dumps(read_payload))
+
             # ---------------- CHAT MESSAGE ----------------
             elif msg_type == "chat":
                 friend_username = data.get("room")  # Frontend says "alex"
@@ -139,11 +154,31 @@ async def websocket_endpoint(websocket: WebSocket,
 
                 message_payload = chat_service.serialize_message_for_websocket(new_msg, user, friend)
 
+                sender_received = False
+                recipient_received = False
                 if room_id in rooms:
                     for conn, target_user in rooms[room_id]:
                         await conn.send_text(json.dumps(message_payload))
+                        if target_user.id == user.id:
+                            sender_received = True
+                        if target_user.id == friend.id:
+                            recipient_received = True
+
+                    if recipient_received:
+                        delivered_payload = {
+                            "type": "message_status",
+                            "message_id": new_msg.id,
+                            "status": "delivered",
+                        }
+                        for conn, target_user in rooms[room_id]:
+                            if target_user.id == user.id:
+                                await conn.send_text(json.dumps(delivered_payload))
 
                 else:
+                    await websocket.send_text(json.dumps(message_payload))
+                    sender_received = True
+
+                if not sender_received:
                     await websocket.send_text(json.dumps(message_payload))
 
     except WebSocketDisconnect:

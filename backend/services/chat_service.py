@@ -38,6 +38,9 @@ def _message_to_dict(message: Message, current_user: User, friend: User) -> dict
         "content": message.content,
         "image_url": message.image_url,
         "timestamp": _serialize_message_timestamp(message.timestamp),
+        "status": "read" if message.is_read else "sent",
+        "is_read": message.is_read,
+        "read_at": _serialize_message_timestamp(message.read_at),
     }
 
 
@@ -78,6 +81,8 @@ def serialize_message_for_websocket(message: Message, current_user: User, friend
         "text": message.content,
         "image_url": message.image_url,
         "timestamp": _serialize_message_timestamp(message.timestamp),
+        "status": "read" if message.is_read else "sent",
+        "read_at": _serialize_message_timestamp(message.read_at),
     }
     return payload
 
@@ -164,16 +169,58 @@ def send_message(db: Session, current_user: User, friend_username: str, text: Op
     return _message_to_dict(message, current_user, friend)
 
 
+def mark_conversation_messages_read(db: Session, current_user: User, friend: User) -> List[Message]:
+    unread_messages = (
+        db.query(Message.id)
+        .filter(
+            Message.sender_id == friend.id,
+            Message.receiver_id == current_user.id,
+            Message.is_read.is_(False),
+        )
+        .all()
+    )
+    message_ids = [message_id for (message_id,) in unread_messages]
+    if not message_ids:
+        return []
+
+    read_at = datetime.now(timezone.utc)
+    (
+        db.query(Message)
+        .filter(Message.id.in_(message_ids))
+        .update(
+            {
+                Message.is_read: True,
+                Message.read_at: read_at,
+            },
+            synchronize_session=False,
+        )
+    )
+    db.commit()
+
+    return db.query(Message).filter(Message.id.in_(message_ids)).all()
+
+
 def mark_messages_read(db: Session, current_user: User, message_id: int) -> Dict:
     message = db.query(Message).filter(Message.id == message_id).first()
     if not message:
         raise NotFoundError("Message not found")
 
-    if message.receiver_id != current_user.id and message.sender_id != current_user.id:
+    if message.receiver_id != current_user.id:
         raise NotFoundError("Message not found")
 
-    # The original controller did not persist a read flag. Preserve behaviour.
-    return {"msg": "Message marked as read"}
+    if not message.is_read:
+        message.is_read = True
+        message.read_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(message)
+
+    return {
+        "msg": "Message marked as read",
+        "id": message.id,
+        "is_read": message.is_read,
+        "read_at": _serialize_message_timestamp(message.read_at),
+        "status": "read" if message.is_read else "sent",
+    }
 
 
 def delete_message(db: Session, current_user: User, message_id: int) -> Dict:

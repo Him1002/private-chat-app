@@ -176,7 +176,57 @@ function selectMessage(messageEl) {
     closeMessageActionMenu();
 }
 
-function addMessage(sender, text, imageUrl, timestamp, messageId) {
+function normalizeMessageStatus(status, isRead) {
+    if (status === "read") return "read";
+    if (status === "delivered") return "delivered";
+    if (isRead) return "read";
+    return "sent";
+}
+
+function getMessageTickLabel(status) {
+    if (status === "read" || status === "delivered") return "✓✓";
+    return "✓";
+}
+
+function applyMessageStatus(messageEl, status, readAt) {
+    if (!messageEl) return;
+
+    const nextStatus = normalizeMessageStatus(status, false);
+    messageEl.dataset.status = nextStatus;
+    if (readAt) {
+        messageEl.dataset.readAt = readAt;
+    }
+
+    const statusEl = messageEl.querySelector(".msg-status");
+    if (!statusEl) return;
+
+    statusEl.textContent = getMessageTickLabel(nextStatus);
+    statusEl.classList.remove("sent", "delivered", "read");
+    statusEl.classList.add(nextStatus);
+}
+
+function updateMessageStatus(messageId, status, readAt) {
+    if (!messageId) return;
+    const messageEl = document.querySelector(`.msg[data-message-id="${messageId}"]`);
+    if (messageEl) {
+        applyMessageStatus(messageEl, status, readAt);
+        return;
+    }
+
+    if (!window.pendingMessageStatuses) {
+        window.pendingMessageStatuses = {};
+    }
+    window.pendingMessageStatuses[String(messageId)] = { status, readAt };
+}
+
+function updateMessagesRead(messageIds, readAt) {
+    if (!Array.isArray(messageIds)) return;
+    messageIds.forEach((messageId) => {
+        updateMessageStatus(messageId, "read", readAt);
+    });
+}
+
+function addMessage(sender, text, imageUrl, timestamp, messageId, status, readAt) {
     const box = document.getElementById("messages");
     const isMe = sender === currentUser;
 
@@ -185,6 +235,10 @@ function addMessage(sender, text, imageUrl, timestamp, messageId) {
     div.dataset.messageId = messageId || "";
     div.dataset.text = text || "";
     div.dataset.imageUrl = imageUrl || "";
+    div.dataset.status = normalizeMessageStatus(status, status === "read");
+    if (readAt) {
+        div.dataset.readAt = readAt;
+    }
 
     let contentHtml = "";
     if (imageUrl) {
@@ -197,9 +251,10 @@ function addMessage(sender, text, imageUrl, timestamp, messageId) {
     const nameHtml = isMe ? "" : `<span class="sender-name">${sender}</span>`;
     const timeLabel = formatMessageTimestamp(timestamp);
     const timestampHtml = timeLabel ? `<span class="msg-time" style="display:none;">${timeLabel}</span>` : "";
+    const statusHtml = isMe ? `<span class="msg-status"></span>` : "";
     const triggerHtml = `<button type="button" class="msg-menu-trigger" style="display:none;" aria-label="Open message actions">...</button>`;
 
-    div.innerHTML = nameHtml + contentHtml + timestampHtml + triggerHtml;
+    div.innerHTML = nameHtml + contentHtml + timestampHtml + statusHtml + triggerHtml;
 
     const trigger = div.querySelector(".msg-menu-trigger");
     if (trigger) {
@@ -217,6 +272,16 @@ function addMessage(sender, text, imageUrl, timestamp, messageId) {
     });
 
     box.appendChild(div);
+    if (isMe) {
+        applyMessageStatus(div, div.dataset.status, readAt);
+        if (window.pendingMessageStatuses) {
+            const pendingStatus = window.pendingMessageStatuses[String(messageId)];
+            if (pendingStatus) {
+                applyMessageStatus(div, pendingStatus.status, pendingStatus.readAt);
+                delete window.pendingMessageStatuses[String(messageId)];
+            }
+        }
+    }
     box.scrollTop = box.scrollHeight;
 }
 

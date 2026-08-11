@@ -180,13 +180,13 @@
 - `typing` (`room`)
 
 #### Server -> Client
-- `chat` (sender/text/image payload)
+- `chat` (sender/text/image payload + persisted `status`/`read_at`)
 - `typing` (sender)
+- `message_status` (`message_id`, `status`) for delivery updates (sent -> delivered)
+- `messages_read` (`message_ids[]`, `read_at`, `reader`) for bulk read receipts
 - `error` (message)
 
 ### Future events required
-- `message_read`
-  - notify sender that one/more message IDs were read
 - `message_edited`
   - broadcast edited content + `edited_at`
 - `message_deleted`

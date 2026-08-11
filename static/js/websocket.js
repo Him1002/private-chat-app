@@ -64,7 +64,7 @@ function handleSocketMessage(e) {
     if (data.type === "chat") {
         const indicators = document.querySelectorAll("#typing-indicator, .typing-indicator");
         indicators.forEach(ind => ind.style.display = "none");
-        addMessage(data.sender, data.text, data.image_url, data.timestamp, data.id);
+        addMessage(data.sender, data.text, data.image_url, data.timestamp, data.id, data.status, data.read_at);
     } else if (data.type === "typing") {
         if (data.sender === currentFriend) {
             const statusEl = document.getElementById("chat-status");
@@ -75,6 +75,14 @@ function handleSocketMessage(e) {
 
         if (typeof showTyping === "function") {
             showTyping(data.sender);
+        }
+    } else if (data.type === "message_status") {
+        if (typeof updateMessageStatus === "function") {
+            updateMessageStatus(data.message_id, data.status, data.read_at);
+        }
+    } else if (data.type === "messages_read") {
+        if (typeof updateMessagesRead === "function") {
+            updateMessagesRead(data.message_ids || [], data.read_at);
         }
     } else if (data.type === "error") {
         showToast(data.message || "Chat error", "error");

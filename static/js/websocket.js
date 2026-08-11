@@ -64,7 +64,7 @@ function handleSocketMessage(e) {
     if (data.type === "chat") {
         const indicators = document.querySelectorAll("#typing-indicator, .typing-indicator");
         indicators.forEach(ind => ind.style.display = "none");
-        addMessage(data.sender, data.text, data.image_url);
+        addMessage(data.sender, data.text, data.image_url, data.timestamp, data.id);
     } else if (data.type === "typing") {
         if (data.sender === currentFriend) {
             const statusEl = document.getElementById("chat-status");

@@ -116,7 +116,7 @@ async def websocket_endpoint(websocket: WebSocket,
                 _, history_messages = chat_service.get_chat_messages(db, user, friend_username)
 
                 for message in history_messages:
-                    payload = chat_service.serialize_message_for_websocket(message, user, friend, include_timestamp=False)
+                    payload = chat_service.serialize_message_for_websocket(message, user, friend)
                     await websocket.send_text(json.dumps(payload))
 
             # ---------------- CHAT MESSAGE ----------------
@@ -137,7 +137,7 @@ async def websocket_endpoint(websocket: WebSocket,
                 except chat_service.BadRequestError:
                     continue
 
-                message_payload = chat_service.serialize_message_for_websocket(new_msg, user, friend, include_timestamp=True)
+                message_payload = chat_service.serialize_message_for_websocket(new_msg, user, friend)
 
                 if room_id in rooms:
                     for conn, target_user in rooms[room_id]:

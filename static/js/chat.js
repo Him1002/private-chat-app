@@ -93,29 +93,142 @@ function send() {
     input.value = "";
 }
 
-function addMessage(sender, text, imageUrl) {
+function closeMessageActionMenu() {
+    const menu = document.querySelector(".message-action-menu");
+    if (menu) menu.remove();
+    document.querySelectorAll(".msg-menu-trigger").forEach((trigger) => {
+        trigger.setAttribute("aria-expanded", "false");
+    });
+}
+
+function openMessageActionMenu(messageEl, triggerEl) {
+    closeMessageActionMenu();
+
+    const menu = document.createElement("div");
+    menu.className = "message-action-menu";
+    menu.innerHTML = `
+        <button type="button" class="message-action-item" data-action="copy">Copy Message</button>
+        <button type="button" class="message-action-item" data-action="reply">Reply</button>
+        <button type="button" class="message-action-item" data-action="react">React</button>
+        <button type="button" class="message-action-item" data-action="edit">Edit</button>
+        <button type="button" class="message-action-item" data-action="delete">Delete</button>
+        <button type="button" class="message-action-item close" data-action="close">Close</button>
+    `;
+
+    const messageRect = messageEl.getBoundingClientRect();
+    const triggerRect = triggerEl.getBoundingClientRect();
+    const menuWidth = 180;
+    const menuHeight = 220;
+    const left = Math.min(window.innerWidth - menuWidth - 12, triggerRect.right - 18);
+    const top = Math.min(window.innerHeight - menuHeight - 12, messageRect.top + 8);
+
+    menu.style.position = "fixed";
+    menu.style.left = `${Math.max(12, left)}px`;
+    menu.style.top = `${Math.max(12, top)}px`;
+    menu.style.zIndex = "2000";
+
+    menu.addEventListener("click", (event) => {
+        const button = event.target.closest(".message-action-item");
+        if (!button) return;
+
+        const action = button.dataset.action;
+        const selectedText = messageEl.dataset.text || "";
+
+        if (action === "copy") {
+            const copyValue = selectedText || (messageEl.dataset.imageUrl || "");
+            if (copyValue && navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(copyValue).catch(() => {
+                    showToast("Copy unavailable", "normal");
+                });
+            } else {
+                showToast("Copy unavailable", "normal");
+            }
+        } else if (action === "close") {
+            closeMessageActionMenu();
+            return;
+        } else {
+            showToast(`${button.textContent.trim()} is not available yet`, "normal");
+        }
+
+        closeMessageActionMenu();
+    });
+
+    document.body.appendChild(menu);
+    triggerEl.setAttribute("aria-expanded", "true");
+}
+
+function selectMessage(messageEl) {
+    const allMessages = document.querySelectorAll(".msg");
+    allMessages.forEach((msg) => {
+        const isSelected = msg === messageEl;
+        msg.classList.toggle("selected", isSelected);
+        const time = msg.querySelector(".msg-time");
+        const trigger = msg.querySelector(".msg-menu-trigger");
+        if (time) time.style.display = isSelected ? "block" : "none";
+        if (trigger) trigger.style.display = isSelected ? "inline-flex" : "none";
+    });
+
+    if (!messageEl) {
+        closeMessageActionMenu();
+        return;
+    }
+
+    closeMessageActionMenu();
+}
+
+function addMessage(sender, text, imageUrl, timestamp, messageId) {
     const box = document.getElementById("messages");
     const isMe = sender === currentUser;
 
     const div = document.createElement("div");
     div.className = `msg ${isMe ? "me" : "friend"}`;
-    let contentHtml = "";
-    
-    // 1. Show Image if exists
-    if (imageUrl) {
-        contentHtml += `<img src="${imageUrl}" style="max-width: 100%; border-radius: 12px; display: block; margin-bottom: 5px; cursor:pointer;" onclick="window.open(this.src)">`;
-    }
-    
-    // 2. Show Text if exists
-    if (text) {
-        contentHtml += `<span>${text}</span>`;
-    }
-    
-    // 3. Add Sender Name (Only for friend)
-    let nameHtml = isMe ? "" : `<span class="sender-name">${sender}</span>`;
+    div.dataset.messageId = messageId || "";
+    div.dataset.text = text || "";
+    div.dataset.imageUrl = imageUrl || "";
 
-    div.innerHTML = nameHtml + contentHtml;
-    
+    let contentHtml = "";
+    if (imageUrl) {
+        contentHtml += `<img src="${imageUrl}" onclick="window.open(this.src)" alt="message image">`;
+    }
+    if (text) {
+        contentHtml += `<span class="msg-text">${text}</span>`;
+    }
+
+    const nameHtml = isMe ? "" : `<span class="sender-name">${sender}</span>`;
+    const timeLabel = formatMessageTimestamp(timestamp);
+    const timestampHtml = timeLabel ? `<span class="msg-time" style="display:none;">${timeLabel}</span>` : "";
+    const triggerHtml = `<button type="button" class="msg-menu-trigger" style="display:none;" aria-label="Open message actions">...</button>`;
+
+    div.innerHTML = nameHtml + contentHtml + timestampHtml + triggerHtml;
+
+    const trigger = div.querySelector(".msg-menu-trigger");
+    if (trigger) {
+        trigger.addEventListener("click", (event) => {
+            event.stopPropagation();
+            openMessageActionMenu(div, trigger);
+        });
+    }
+
+    div.addEventListener("click", (event) => {
+        if (event.target.closest(".msg-menu-trigger") || event.target.closest(".message-action-menu") || event.target.closest(".message-action-item")) {
+            return;
+        }
+        selectMessage(div);
+    });
+
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
 }
+
+document.addEventListener("click", (event) => {
+    const clickedMessage = event.target.closest(".msg");
+    const clickedTrigger = event.target.closest(".msg-menu-trigger");
+    const clickedMenu = event.target.closest(".message-action-menu");
+
+    if (!clickedMenu && !clickedTrigger && !clickedMessage) {
+        const selected = document.querySelector(".msg.selected");
+        if (selected) {
+            selectMessage(null);
+        }
+    }
+});

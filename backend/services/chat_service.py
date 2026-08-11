@@ -20,6 +20,16 @@ class ForbiddenError(Exception):
     pass
 
 
+def _serialize_message_timestamp(timestamp: Optional[datetime]) -> Optional[str]:
+    if not timestamp:
+        return None
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    else:
+        timestamp = timestamp.astimezone(timezone.utc)
+    return timestamp.isoformat().replace("+00:00", "Z")
+
+
 def _message_to_dict(message: Message, current_user: User, friend: User) -> dict:
     return {
         "id": message.id,
@@ -27,7 +37,7 @@ def _message_to_dict(message: Message, current_user: User, friend: User) -> dict
         "receiver": friend.username if message.sender_id == current_user.id else current_user.username,
         "content": message.content,
         "image_url": message.image_url,
-        "timestamp": message.timestamp.isoformat() if message.timestamp else None,
+        "timestamp": _serialize_message_timestamp(message.timestamp),
     }
 
 
@@ -60,15 +70,15 @@ def get_chat_messages(db: Session, current_user: User, friend_username: str) -> 
     return friend, messages
 
 
-def serialize_message_for_websocket(message: Message, current_user: User, friend: User, include_timestamp: bool = False) -> Dict:
+def serialize_message_for_websocket(message: Message, current_user: User, friend: User) -> Dict:
     payload = {
+        "id": message.id,
         "type": "chat",
         "sender": current_user.username if message.sender_id == current_user.id else friend.username,
         "text": message.content,
         "image_url": message.image_url,
+        "timestamp": _serialize_message_timestamp(message.timestamp),
     }
-    if include_timestamp:
-        payload["timestamp"] = message.timestamp.isoformat() if message.timestamp else None
     return payload
 
 

@@ -1,8 +1,156 @@
 let activeMessageEdit = null;
+let activeConversationSearchQuery = "";
+let activeConversationSearchRequestId = 0;
+
+function setConversationSearchEnabled(enabled) {
+    const searchInput = document.getElementById("chat-search-input");
+    const clearButton = document.getElementById("chat-search-clear");
+    if (searchInput) {
+        searchInput.disabled = !enabled;
+        if (!enabled) {
+            searchInput.value = "";
+        }
+    }
+    if (clearButton) {
+        clearButton.disabled = !enabled;
+    }
+}
+
+function resetConversationSearchUI(clearInput = true) {
+    activeConversationSearchQuery = "";
+    activeConversationSearchRequestId += 1;
+
+    const resultsEl = document.getElementById("chat-search-results");
+    if (resultsEl) {
+        resultsEl.innerHTML = "";
+        resultsEl.style.display = "none";
+    }
+
+    if (clearInput) {
+        const searchInput = document.getElementById("chat-search-input");
+        if (searchInput) {
+            searchInput.value = "";
+        }
+    }
+}
+
+function createSearchResultMeta(message) {
+    const senderLabel = message.sender === currentUser ? "You" : message.sender;
+    const timeLabel = formatMessageTimestamp(message.timestamp);
+    return timeLabel ? `${senderLabel} • ${timeLabel}` : senderLabel;
+}
+
+function jumpToMessageById(messageId) {
+    const target = document.querySelector(`.msg[data-message-id="${messageId}"]`);
+    if (!target) {
+        showToast("Message not available in this chat", "normal");
+        return;
+    }
+
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    selectMessage(target);
+    target.classList.add("search-match-flash");
+    window.setTimeout(() => target.classList.remove("search-match-flash"), 1500);
+}
+
+function renderConversationSearchResults(results, query) {
+    const resultsEl = document.getElementById("chat-search-results");
+    if (!resultsEl) return;
+
+    resultsEl.innerHTML = "";
+    const normalizedQuery = (query || "").trim();
+    if (!normalizedQuery) {
+        resultsEl.style.display = "none";
+        return;
+    }
+
+    resultsEl.style.display = "block";
+
+    if (!Array.isArray(results) || results.length === 0) {
+        const emptyState = document.createElement("div");
+        emptyState.className = "chat-search-empty";
+        emptyState.innerText = `No messages found for "${normalizedQuery}"`;
+        resultsEl.appendChild(emptyState);
+        return;
+    }
+
+    results.forEach((message) => {
+        const itemButton = document.createElement("button");
+        itemButton.type = "button";
+        itemButton.className = "chat-search-result-item";
+        itemButton.dataset.messageId = String(message.id || "");
+
+        const meta = document.createElement("div");
+        meta.className = "chat-search-result-meta";
+        meta.innerText = createSearchResultMeta(message);
+
+        const content = document.createElement("div");
+        content.className = "chat-search-result-content";
+        content.innerText = message.content || "";
+
+        itemButton.appendChild(meta);
+        itemButton.appendChild(content);
+        itemButton.addEventListener("click", () => {
+            jumpToMessageById(message.id);
+        });
+
+        resultsEl.appendChild(itemButton);
+    });
+}
+
+async function searchConversationMessages(query) {
+    if (!currentFriend) {
+        resetConversationSearchUI(false);
+        return;
+    }
+
+    const normalizedQuery = (query || "").trim();
+    activeConversationSearchQuery = normalizedQuery;
+    const requestId = ++activeConversationSearchRequestId;
+
+    if (!normalizedQuery) {
+        renderConversationSearchResults([], "");
+        return;
+    }
+
+    try {
+        const response = await fetch(
+            `/chat/${encodeURIComponent(currentFriend)}/search?query=${encodeURIComponent(normalizedQuery)}`,
+            {
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                },
+            }
+        );
+
+        if (requestId !== activeConversationSearchRequestId) return;
+
+        if (!response.ok) {
+            renderConversationSearchResults([], normalizedQuery);
+            return;
+        }
+
+        const results = await response.json();
+        renderConversationSearchResults(results, normalizedQuery);
+    } catch (error) {
+        if (requestId !== activeConversationSearchRequestId) return;
+        showToast("Unable to search messages", "error");
+    }
+}
+
+function handleConversationSearchInput(event) {
+    const query = event.target ? event.target.value : "";
+    searchConversationMessages(query);
+}
+
+function clearConversationSearch() {
+    resetConversationSearchUI(true);
+}
 
 function startChat(friend, element) {
         //console.log("Friend Object Data:", friend);
         cancelMessageEdit(true);
+        resetConversationSearchUI(true);
         currentFriend = friend.username;
         
         // UI Updates
@@ -29,6 +177,7 @@ function startChat(friend, element) {
         
         document.getElementById("msg-input").disabled = false;
         document.getElementById("send-btn").disabled = false;
+        setConversationSearchEnabled(true);
 
         connectWebSocket();
         sendSocketPayload({ type: "join", room: currentFriend });
@@ -566,3 +715,6 @@ document.addEventListener("click", (event) => {
         }
     }
 });
+
+setConversationSearchEnabled(false);
+resetConversationSearchUI(true);

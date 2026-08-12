@@ -66,6 +66,19 @@ async def send_message(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/chat/{friend_username}/search")
+def search_conversation_messages(
+    friend_username: str,
+    query: str = "",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return chat_service.search_conversation_messages(db, current_user, friend_username, query)
+    except chat_service.NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.post("/messages/{message_id}/read")
 @router.post("/chat/messages/{message_id}/read")
 def mark_messages_read(

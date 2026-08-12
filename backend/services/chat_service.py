@@ -187,6 +187,35 @@ def send_message(db: Session, current_user: User, friend_username: str, text: Op
     return _message_to_dict(message, current_user, friend)
 
 
+def search_conversation_messages(
+    db: Session,
+    current_user: User,
+    friend_username: str,
+    query: str,
+) -> List[Dict]:
+    friend = get_chat_friend(db, current_user, friend_username)
+    search_text = (query or "").strip()
+    if not search_text:
+        return []
+
+    matching_messages = (
+        db.query(Message)
+        .filter(
+            or_(
+                (Message.sender_id == current_user.id) & (Message.receiver_id == friend.id),
+                (Message.sender_id == friend.id) & (Message.receiver_id == current_user.id),
+            ),
+            Message.is_deleted.is_(False),
+            Message.content.isnot(None),
+            Message.content.ilike(f"%{search_text}%"),
+        )
+        .order_by(Message.timestamp.asc())
+        .all()
+    )
+
+    return [_message_to_dict(message, current_user, friend) for message in matching_messages]
+
+
 def _get_message_for_user(db: Session, current_user: User, message_id: int) -> Message:
     message = db.query(Message).filter(Message.id == message_id).first()
     if not message:

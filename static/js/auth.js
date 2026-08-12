@@ -64,6 +64,12 @@ function logout() {
     document.getElementById("chat-title").innerText = "Select a Chat"; // Reset Header
     document.getElementById("chat-status").innerText = ""; 
     document.getElementById("msg-input").value = "";
+    if (typeof resetConversationSearchUI === "function") {
+        resetConversationSearchUI(true);
+    }
+    if (typeof setConversationSearchEnabled === "function") {
+        setConversationSearchEnabled(false);
+    }
     
     // 4. Disable Inputs
     document.getElementById("msg-input").disabled = true;

@@ -60,6 +60,19 @@
     .msg .msg-edited { font-size: 11px; line-height: 1; opacity: 0.75; }
     .msg.friend .msg-edited { color: #b8b8b8; }
     .msg.me .msg-edited { color: rgba(255, 255, 255, 0.85); align-self: flex-end; }
+    .msg.search-match-flash { box-shadow: 0 0 0 2px rgba(0, 132, 255, 0.7); }
+
+    .chat-search-container { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #2a2a2a; background: #1e1e1e; }
+    .chat-search-input { flex: 1; border: 1px solid #343434; background: #262626; color: #f1f1f1; border-radius: 8px; padding: 8px 10px; outline: none; font-size: 13px; }
+    .chat-search-input:focus { border-color: #4a89ff; }
+    .chat-search-clear { border: none; border-radius: 8px; background: #333; color: #d8d8d8; padding: 8px 10px; cursor: pointer; font-size: 12px; }
+    .chat-search-clear:disabled { opacity: 0.5; cursor: not-allowed; }
+    .chat-search-results { display: none; max-height: 180px; overflow-y: auto; border-bottom: 1px solid #2a2a2a; background: #191919; }
+    .chat-search-empty { padding: 12px; color: #8f8f8f; font-size: 13px; }
+    .chat-search-result-item { display: block; width: 100%; text-align: left; border: none; background: transparent; color: #f1f1f1; padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #252525; }
+    .chat-search-result-item:hover { background: #242424; }
+    .chat-search-result-meta { font-size: 11px; color: #8ebcff; margin-bottom: 4px; }
+    .chat-search-result-content { font-size: 13px; color: #dcdcdc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 
     /* --- INPUT AREA --- */
@@ -189,6 +202,19 @@
             </div>
         </div>
         
+        <div id="chat-search-container" class="chat-search-container">
+            <input
+                id="chat-search-input"
+                class="chat-search-input"
+                type="text"
+                placeholder="Search this conversation..."
+                disabled
+                oninput="handleConversationSearchInput(event)"
+            >
+            <button id="chat-search-clear" class="chat-search-clear" type="button" onclick="clearConversationSearch()" disabled>Clear</button>
+        </div>
+        <div id="chat-search-results" class="chat-search-results"></div>
+
         <div id="messages" class="messages">
             <div style="height: 100%; display: flex; align-items: center; justify-content: center; color: #333; flex-direction: column;">
                 <div style="font-size: 40px; margin-bottom: 10px;">💬</div>

@@ -4,9 +4,10 @@ from datetime import datetime, UTC
 import json
 
 from backend.db.database import get_db
-from backend.db.models import User, Friend
+from backend.db.models import User, Friend, Message
 from backend.core.security import verify_ws_token
 from backend.services import chat_service
+from backend.services import reaction_service
 
 router = APIRouter()
 
@@ -115,8 +116,15 @@ async def websocket_endpoint(websocket: WebSocket,
 
                 _, history_messages = chat_service.get_chat_messages(db, user, friend_username)
 
+                # Batch-load reactions for all history messages
+                history_msg_ids = [m.id for m in history_messages]
+                reactions_map = reaction_service.get_reactions_for_messages(db, history_msg_ids)
+
                 for message in history_messages:
-                    payload = chat_service.serialize_message_for_websocket(message, user, friend)
+                    msg_reactions = reactions_map.get(message.id, [])
+                    payload = chat_service.serialize_message_for_websocket(
+                        message, user, friend, reactions=msg_reactions,
+                    )
                     await websocket.send_text(json.dumps(payload))
 
                 newly_read_messages = chat_service.mark_conversation_messages_read(db, user, friend)
@@ -304,6 +312,98 @@ async def websocket_endpoint(websocket: WebSocket,
 
                 if not sent_to_sender:
                     await websocket.send_text(json.dumps(updated_payload))
+
+            # ---------------- ADD REACTION ----------------
+            elif msg_type == "reaction_add":
+                message_id = data.get("message_id")
+                emoji = data.get("emoji")
+                try:
+                    message_id = int(message_id)
+                except (TypeError, ValueError):
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Invalid message id",
+                    }))
+                    continue
+
+                try:
+                    reactions = reaction_service.add_reaction(db, user, message_id, emoji)
+                except reaction_service.NotFoundError as exc:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": str(exc),
+                    }))
+                    continue
+                except reaction_service.BadRequestError as exc:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": str(exc),
+                    }))
+                    continue
+
+                # Determine the DM room and broadcast the updated reactions
+                reacted_msg = db.query(Message).filter(Message.id == message_id).first()
+                if reacted_msg:
+                    friend_id = reacted_msg.receiver_id if reacted_msg.sender_id == user.id else reacted_msg.sender_id
+                    friend = db.query(User).filter(User.id == friend_id).first()
+                    if friend:
+                        room_id = get_dm_room(user.username, friend.username)
+                        reaction_payload = {
+                            "type": "reaction_update",
+                            "message_id": message_id,
+                            "reactions": reactions,
+                        }
+                        sent_to_sender = False
+                        if room_id in rooms:
+                            for conn, target_user in rooms[room_id]:
+                                await conn.send_text(json.dumps(reaction_payload))
+                                if target_user.id == user.id:
+                                    sent_to_sender = True
+                        if not sent_to_sender:
+                            await websocket.send_text(json.dumps(reaction_payload))
+
+            # ---------------- REMOVE REACTION ----------------
+            elif msg_type == "reaction_remove":
+                message_id = data.get("message_id")
+                emoji = data.get("emoji")
+                try:
+                    message_id = int(message_id)
+                except (TypeError, ValueError):
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Invalid message id",
+                    }))
+                    continue
+
+                try:
+                    reactions = reaction_service.remove_reaction(db, user, message_id, emoji)
+                except reaction_service.NotFoundError as exc:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": str(exc),
+                    }))
+                    continue
+
+                # Determine the DM room and broadcast the updated reactions
+                reacted_msg = db.query(Message).filter(Message.id == message_id).first()
+                if reacted_msg:
+                    friend_id = reacted_msg.receiver_id if reacted_msg.sender_id == user.id else reacted_msg.sender_id
+                    friend = db.query(User).filter(User.id == friend_id).first()
+                    if friend:
+                        room_id = get_dm_room(user.username, friend.username)
+                        reaction_payload = {
+                            "type": "reaction_update",
+                            "message_id": message_id,
+                            "reactions": reactions,
+                        }
+                        sent_to_sender = False
+                        if room_id in rooms:
+                            for conn, target_user in rooms[room_id]:
+                                await conn.send_text(json.dumps(reaction_payload))
+                                if target_user.id == user.id:
+                                    sent_to_sender = True
+                        if not sent_to_sender:
+                            await websocket.send_text(json.dumps(reaction_payload))
 
     except WebSocketDisconnect:
         # ✅ CLOCK OUT: Remove from global online list

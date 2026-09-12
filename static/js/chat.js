@@ -2,6 +2,124 @@ let activeMessageEdit = null;
 let activeConversationSearchQuery = "";
 let activeConversationSearchRequestId = 0;
 
+const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "😡", "🔥", "👏", "🎉", "💯"];
+
+function closeReactionPicker() {
+    const picker = document.querySelector(".reaction-picker");
+    if (picker) picker.remove();
+}
+
+function openReactionPicker(messageEl) {
+    closeReactionPicker();
+    closeMessageActionMenu();
+
+    const messageId = messageEl.dataset.messageId;
+    if (!messageId) return;
+
+    const picker = document.createElement("div");
+    picker.className = "reaction-picker";
+
+    REACTION_EMOJIS.forEach((emoji) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "reaction-picker-emoji";
+        btn.textContent = emoji;
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            sendSocketPayload({
+                type: "reaction_add",
+                message_id: messageId,
+                emoji: emoji,
+            });
+            closeReactionPicker();
+        });
+        picker.appendChild(btn);
+    });
+
+    // Position the picker near the message
+    const msgRect = messageEl.getBoundingClientRect();
+    const isMe = messageEl.classList.contains("me");
+    picker.style.position = "fixed";
+    picker.style.zIndex = "2100";
+
+    // Temporarily add to DOM to measure
+    picker.style.visibility = "hidden";
+    document.body.appendChild(picker);
+    const pickerRect = picker.getBoundingClientRect();
+    picker.style.visibility = "";
+
+    let left = isMe ? msgRect.right - pickerRect.width : msgRect.left;
+    let top = msgRect.top - pickerRect.height - 6;
+    if (top < 8) top = msgRect.bottom + 6;
+    left = Math.max(8, Math.min(left, window.innerWidth - pickerRect.width - 8));
+
+    picker.style.left = `${left}px`;
+    picker.style.top = `${top}px`;
+}
+
+function renderMessageReactions(messageEl, reactions) {
+    if (!messageEl) return;
+
+    let container = messageEl.querySelector(".msg-reactions");
+
+    if (!reactions || reactions.length === 0) {
+        if (container) container.remove();
+        return;
+    }
+
+    if (!container) {
+        container = document.createElement("div");
+        container.className = "msg-reactions";
+        messageEl.appendChild(container);
+    }
+
+    container.innerHTML = "";
+
+    reactions.forEach((r) => {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "reaction-chip";
+
+        const isActive = Array.isArray(r.usernames) && r.usernames.includes(currentUser);
+        if (isActive) chip.classList.add("active");
+
+        chip.textContent = `${r.emoji} ${r.count}`;
+        chip.title = (r.usernames || []).join(", ");
+
+        chip.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (isActive) {
+                sendSocketPayload({
+                    type: "reaction_remove",
+                    message_id: messageEl.dataset.messageId,
+                    emoji: r.emoji,
+                });
+            } else {
+                sendSocketPayload({
+                    type: "reaction_add",
+                    message_id: messageEl.dataset.messageId,
+                    emoji: r.emoji,
+                });
+            }
+        });
+
+        container.appendChild(chip);
+    });
+}
+
+function updateMessageReactions(messageId, reactions) {
+    if (!messageId) return;
+    // Select all messages with this ID (handles potential duplicate optimistic UI nodes)
+    const messageEls = document.querySelectorAll(`.msg[data-message-id="${messageId}"]`);
+    if (messageEls.length === 0) {
+        console.warn("Message element not found for reactions:", messageId);
+        return;
+    }
+    messageEls.forEach((messageEl) => {
+        renderMessageReactions(messageEl, reactions);
+    });
+}
+
 function setConversationSearchEnabled(enabled) {
     const searchInput = document.getElementById("chat-search-input");
     const clearButton = document.getElementById("chat-search-clear");
@@ -148,60 +266,60 @@ function clearConversationSearch() {
 }
 
 function startChat(friend, element) {
-        //console.log("Friend Object Data:", friend);
-        cancelMessageEdit(true);
-        resetConversationSearchUI(true);
-        currentFriend = friend.username;
-        
-        // UI Updates
-        document.querySelectorAll(".item").forEach(el => el.classList.remove("active"));
-        if (element) element.classList.add("active");
-        
-        document.getElementById("chat-title").innerText = friend.username;
-        const statusEl = document.getElementById("chat-status");
-        
-            // ✓ Using the exact 'is_online' property from your database/server
-        if (friend.is_online) {
-            statusEl.innerText = "Online";
-            statusEl.className = "status online";
-            statusEl.style.color = "#2ecc71"; // Green
-        } else {
-            statusEl.innerText = formatLastSeen(friend.last_seen);
-            statusEl.className = "status offline";
-            statusEl.style.color = "#888"; // Gray
-        }
-        //document.getElementById("chat-status").innerText = formatLastSeen(friend.last_seen);
-        
-        // 🔐 CRITICAL: Wipe the "Welcome Screen" or old messages before loading new ones
-        document.getElementById("messages").innerHTML = "";
-        
-        document.getElementById("msg-input").disabled = false;
-        document.getElementById("send-btn").disabled = false;
-        setConversationSearchEnabled(true);
+    //console.log("Friend Object Data:", friend);
+    cancelMessageEdit(true);
+    resetConversationSearchUI(true);
+    currentFriend = friend.username;
 
-        connectWebSocket();
-        sendSocketPayload({ type: "join", room: currentFriend });
-        
-                //console.log("💥 [STEP 3] Received typing signal from:", data.sender);
-                
-                
+    // UI Updates
+    document.querySelectorAll(".item").forEach(el => el.classList.remove("active"));
+    if (element) element.classList.add("active");
 
-        // Mobile Logic
-        if (window.innerWidth <= 768) {
-            document.body.classList.add("view-chat");
-            document.body.classList.remove("view-list");
-        }
-}   
+    document.getElementById("chat-title").innerText = friend.username;
+    const statusEl = document.getElementById("chat-status");
+
+    // ✓ Using the exact 'is_online' property from your database/server
+    if (friend.is_online) {
+        statusEl.innerText = "Online";
+        statusEl.className = "status online";
+        statusEl.style.color = "#2ecc71"; // Green
+    } else {
+        statusEl.innerText = formatLastSeen(friend.last_seen);
+        statusEl.className = "status offline";
+        statusEl.style.color = "#888"; // Gray
+    }
+    //document.getElementById("chat-status").innerText = formatLastSeen(friend.last_seen);
+
+    // 🔐 CRITICAL: Wipe the "Welcome Screen" or old messages before loading new ones
+    document.getElementById("messages").innerHTML = "";
+
+    document.getElementById("msg-input").disabled = false;
+    document.getElementById("send-btn").disabled = false;
+    setConversationSearchEnabled(true);
+
+    connectWebSocket();
+    sendSocketPayload({ type: "join", room: currentFriend });
+
+    //console.log("💥 [STEP 3] Received typing signal from:", data.sender);
+
+
+
+    // Mobile Logic
+    if (window.innerWidth <= 768) {
+        document.body.classList.add("view-chat");
+        document.body.classList.remove("view-list");
+    }
+}
 
 function showTyping(sender) {
     if (sender === currentUser) return;
-    
+
     const indicator = document.getElementById("typing-indicator");
-    
-    if(indicator){
+
+    if (indicator) {
         indicator.innerText = `${sender} is typing...`;
         indicator.style.display = "block";
-    
+
         // Clear old timer if exists
         if (window.typingTimeout) clearTimeout(window.typingTimeout);
 
@@ -209,15 +327,15 @@ function showTyping(sender) {
         window.typingTimeout = setTimeout(() => {
             indicator.style.display = "none";
         }, 3000); // 3000ms
-    } else{
+    } else {
         console.error("✘ [STEP 3 FAILED] Could not find #typing-indicator div in HTML");
     }
-}    
+}
 
 function handleInput() {
     const input = document.getElementById("msg-input");
     const sendBtn = document.getElementById("send-btn");
-    
+
     // 1. Enable/Disable Send Button
     sendBtn.disabled = (input.value.trim() === "");
 
@@ -544,8 +662,10 @@ function openMessageActionMenu(messageEl, triggerEl) {
         } else if (action === "close") {
             closeMessageActionMenu();
             return;
-        } else {
-            showToast(`${button.textContent.trim()} is not available yet`, "normal");
+        } else if (action === "react") {
+            event.stopPropagation();
+            openReactionPicker(messageEl);
+            return;
         }
 
         closeMessageActionMenu();
@@ -624,7 +744,7 @@ function updateMessagesRead(messageIds, readAt) {
     });
 }
 
-function addMessage(sender, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "") {
+function addMessage(sender, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "", reactions = null) {
     const box = document.getElementById("messages");
     const isMe = sender === currentUser;
     const deleted = Boolean(isDeleted || text === "This message was deleted");
@@ -701,14 +821,26 @@ function addMessage(sender, text, imageUrl, timestamp, messageId, status, readAt
         }
     }
     box.scrollTop = box.scrollHeight;
+
+    // Render reactions if present
+    if (reactions && Array.isArray(reactions) && reactions.length > 0) {
+        renderMessageReactions(div, reactions);
+    }
 }
 
 document.addEventListener("click", (event) => {
     const clickedMessage = event.target.closest(".msg");
     const clickedTrigger = event.target.closest(".msg-menu-trigger");
     const clickedMenu = event.target.closest(".message-action-menu");
+    const clickedPicker = event.target.closest(".reaction-picker");
+    const clickedReactionChip = event.target.closest(".reaction-chip");
 
-    if (!clickedMenu && !clickedTrigger && !clickedMessage) {
+    // Close picker if clicking outside of it
+    if (!clickedPicker) {
+        closeReactionPicker();
+    }
+
+    if (!clickedMenu && !clickedTrigger && !clickedMessage && !clickedPicker && !clickedReactionChip) {
         const selected = document.querySelector(".msg.selected");
         if (selected) {
             selectMessage(null);

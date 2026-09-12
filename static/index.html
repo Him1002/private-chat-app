@@ -62,6 +62,69 @@
     .msg.me .msg-edited { color: rgba(255, 255, 255, 0.85); align-self: flex-end; }
     .msg.search-match-flash { box-shadow: 0 0 0 2px rgba(0, 132, 255, 0.7); }
 
+    /* --- REACTION PICKER --- */
+    .reaction-picker {
+        display: flex;
+        gap: 4px;
+        padding: 8px 10px;
+        border-radius: 24px;
+        background: #252525;
+        border: 1px solid #3a3a3a;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+        flex-wrap: wrap;
+        max-width: 280px;
+    }
+    .reaction-picker-emoji {
+        appearance: none;
+        border: none;
+        background: transparent;
+        font-size: 22px;
+        line-height: 1;
+        padding: 4px 5px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.15s ease, transform 0.12s ease;
+    }
+    .reaction-picker-emoji:hover {
+        background: rgba(255, 255, 255, 0.12);
+        transform: scale(1.2);
+    }
+
+    /* --- REACTION CHIPS ON MESSAGES --- */
+    .msg-reactions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 4px;
+    }
+    .reaction-chip {
+        appearance: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        padding: 2px 8px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.06);
+        color: #e0e0e0;
+        font-size: 13px;
+        line-height: 1.4;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .reaction-chip:hover {
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(255, 255, 255, 0.2);
+    }
+    .reaction-chip.active {
+        background: rgba(0, 132, 255, 0.2);
+        border-color: rgba(0, 132, 255, 0.5);
+        color: #7fd5ff;
+    }
+    .reaction-chip.active:hover {
+        background: rgba(0, 132, 255, 0.3);
+    }
+
     .chat-search-container { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #2a2a2a; background: #1e1e1e; }
     .chat-search-input { flex: 1; border: 1px solid #343434; background: #262626; color: #f1f1f1; border-radius: 8px; padding: 8px 10px; outline: none; font-size: 13px; }
     .chat-search-input:focus { border-color: #4a89ff; }

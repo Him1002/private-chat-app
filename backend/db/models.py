@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, UniqueConstraint
 from backend.db.database import Base
 from sqlalchemy.orm import relationship
 from datetime import datetime, UTC
@@ -45,3 +45,23 @@ class Message(Base):
     # ORM relationship to access the parent message and replies collection.
     # remote_side ensures SQLAlchemy understands this is a self-referential relationship.
     reply_to = relationship("Message", remote_side=[id], backref="replies", uselist=False)
+
+    # ORM relationship to access reactions on this message.
+    reactions = relationship("MessageReaction", back_populates="message", cascade="all, delete-orphan")
+
+
+class MessageReaction(Base):
+    __tablename__ = "message_reactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    message_id = Column(Integer, ForeignKey("messages.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    emoji = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.now(UTC))
+
+    __table_args__ = (
+        UniqueConstraint("message_id", "user_id", "emoji", name="uq_reaction_per_user"),
+    )
+
+    message = relationship("Message", back_populates="reactions")
+    user = relationship("User")

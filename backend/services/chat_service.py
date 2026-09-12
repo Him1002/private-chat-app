@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.db.models import Message, User
 from backend.services.friend_service import are_friends
+from backend.services import reaction_service
 
 
 class NotFoundError(Exception):
@@ -30,7 +31,7 @@ def _serialize_message_timestamp(timestamp: Optional[datetime]) -> Optional[str]
     return timestamp.isoformat().replace("+00:00", "Z")
 
 
-def _message_to_dict(message: Message, current_user: User, friend: User) -> dict:
+def _message_to_dict(message: Message, current_user: User, friend: User, reactions: Optional[list] = None) -> dict:
     deleted_text = "This message was deleted"
     is_deleted = bool(message.is_deleted)
     return {
@@ -46,6 +47,7 @@ def _message_to_dict(message: Message, current_user: User, friend: User) -> dict
         "read_at": _serialize_message_timestamp(message.read_at),
         "is_deleted": is_deleted,
         "deleted_at": _serialize_message_timestamp(message.deleted_at),
+        "reactions": reactions if reactions is not None else [],
     }
 
 
@@ -83,6 +85,7 @@ def serialize_message_for_websocket(
     current_user: User,
     friend: User,
     event_type: str = "chat",
+    reactions: Optional[list] = None,
 ) -> Dict:
     deleted_text = "This message was deleted"
     payload = {
@@ -97,6 +100,7 @@ def serialize_message_for_websocket(
         "read_at": _serialize_message_timestamp(message.read_at),
         "is_deleted": bool(message.is_deleted),
         "deleted_at": _serialize_message_timestamp(message.deleted_at),
+        "reactions": reactions if reactions is not None else [],
     }
     return payload
 
@@ -177,7 +181,12 @@ def list_conversations(db: Session, current_user: User) -> List[Dict]:
 
 def get_chat_history(db: Session, current_user: User, friend_username: str) -> List[Dict]:
     friend, messages = get_chat_messages(db, current_user, friend_username)
-    return [_message_to_dict(message, current_user, friend) for message in messages]
+    message_ids = [m.id for m in messages]
+    reactions_map = reaction_service.get_reactions_for_messages(db, message_ids)
+    return [
+        _message_to_dict(message, current_user, friend, reactions=reactions_map.get(message.id, []))
+        for message in messages
+    ]
 
 
 def send_message(db: Session, current_user: User, friend_username: str, text: Optional[str], image_url: Optional[str]) -> Dict:

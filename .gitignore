@@ -25,3 +25,6 @@ venv/
 
 # Temporary
 tree.txt
+
+# Antigravity IDE local configuration
+.agents/

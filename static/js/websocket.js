@@ -64,7 +64,7 @@ function handleSocketMessage(e) {
     if (data.type === "chat") {
         const indicators = document.querySelectorAll("#typing-indicator, .typing-indicator");
         indicators.forEach(ind => ind.style.display = "none");
-        addMessage(data.sender, data.text, data.image_url, data.timestamp, data.id, data.status, data.read_at, data.edited_at, data.is_deleted, data.deleted_at);
+        addMessage(data.sender, data.text, data.image_url, data.timestamp, data.id, data.status, data.read_at, data.edited_at, data.is_deleted, data.deleted_at, data.reactions);
     } else if (data.type === "message_updated") {
         if (typeof updateMessageContent === "function") {
             updateMessageContent(data.id, data.text, data.edited_at);
@@ -94,6 +94,10 @@ function handleSocketMessage(e) {
     } else if (data.type === "messages_read") {
         if (typeof updateMessagesRead === "function") {
             updateMessagesRead(data.message_ids || [], data.read_at);
+        }
+    } else if (data.type === "reaction_update") {
+        if (typeof updateMessageReactions === "function") {
+            updateMessageReactions(data.message_id, data.reactions || []);
         }
     } else if (data.type === "error") {
         showToast(data.message || "Chat error", "error");

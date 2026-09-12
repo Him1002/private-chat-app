@@ -8,6 +8,7 @@ from backend.core.security import get_current_user
 from backend.db.database import get_db
 from backend.db.models import User
 from backend.services import chat_service
+from backend.services import reaction_service
 
 router = APIRouter()
 
@@ -19,6 +20,10 @@ class MessageCreate(BaseModel):
 
 class MessageUpdate(BaseModel):
     text: str
+
+
+class ReactionCreate(BaseModel):
+    emoji: str
 
 
 @router.get("/chats")
@@ -126,3 +131,31 @@ def edit_message(
         raise HTTPException(status_code=403, detail=str(e))
     except chat_service.BadRequestError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/messages/{message_id}/reactions")
+def add_reaction(
+    message_id: int,
+    data: ReactionCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return reaction_service.add_reaction(db, current_user, message_id, data.emoji)
+    except reaction_service.NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except reaction_service.BadRequestError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/messages/{message_id}/reactions/{emoji}")
+def remove_reaction(
+    message_id: int,
+    emoji: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return reaction_service.remove_reaction(db, current_user, message_id, emoji)
+    except reaction_service.NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))

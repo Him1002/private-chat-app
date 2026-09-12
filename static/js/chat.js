@@ -1,4 +1,5 @@
 let activeMessageEdit = null;
+let activeReplyTarget = null;
 let activeConversationSearchQuery = "";
 let activeConversationSearchRequestId = 0;
 
@@ -268,6 +269,7 @@ function clearConversationSearch() {
 function startChat(friend, element) {
     //console.log("Friend Object Data:", friend);
     cancelMessageEdit(true);
+    cancelReplyMode(true);
     resetConversationSearchUI(true);
     currentFriend = friend.username;
 
@@ -376,12 +378,17 @@ function send() {
     }
 
     if (!input.value) return;
-    const sent = sendSocketPayload({ type: "chat", room: currentFriend, text: input.value });
+    const payload = { type: "chat", room: currentFriend, text: input.value };
+    if (activeReplyTarget) {
+        payload.reply_to_message_id = activeReplyTarget.messageId;
+    }
+    const sent = sendSocketPayload(payload);
     if (!sent) {
         showToast("Reconnecting chat...", "normal");
         return;
     }
     input.value = "";
+    cancelReplyMode(true);
 }
 
 function updateComposerForEditMode() {
@@ -466,6 +473,8 @@ function enterMessageEditMode(messageEl) {
         return;
     }
 
+    cancelReplyMode(true);
+
     const input = document.getElementById("msg-input");
     const messageText = messageEl.dataset.text || "";
     const messageId = messageEl.dataset.messageId;
@@ -497,6 +506,50 @@ function cancelMessageEdit(silent = false) {
 
     if (!silent) {
         showToast("Edit canceled", "normal");
+    }
+}
+
+function enterReplyMode(messageEl) {
+    if (!messageEl) return;
+    const messageId = messageEl.dataset.messageId;
+    if (!messageId) return;
+
+    cancelMessageEdit(true);
+
+    const isDeleted = isMessageDeleted(messageEl);
+    const senderName = messageEl.querySelector(".sender-name");
+    const sender = messageEl.classList.contains("me") ? "You" : (senderName ? senderName.textContent : "");
+    const content = isDeleted ? "This message was deleted" : (messageEl.dataset.text || "");
+
+    activeReplyTarget = {
+        messageId,
+        sender,
+        content,
+    };
+
+    updateComposerForReplyMode();
+    const input = document.getElementById("msg-input");
+    if (input) input.focus();
+}
+
+function cancelReplyMode(silent = false) {
+    if (!activeReplyTarget) return;
+    activeReplyTarget = null;
+    updateComposerForReplyMode();
+}
+
+function updateComposerForReplyMode() {
+    const banner = document.getElementById("reply-mode-banner");
+    if (!banner) return;
+
+    if (activeReplyTarget) {
+        const senderEl = banner.querySelector(".reply-banner-sender");
+        const contentEl = banner.querySelector(".reply-banner-content");
+        if (senderEl) senderEl.textContent = activeReplyTarget.sender;
+        if (contentEl) contentEl.textContent = activeReplyTarget.content;
+        banner.style.display = "flex";
+    } else {
+        banner.style.display = "none";
     }
 }
 
@@ -633,6 +686,10 @@ function openMessageActionMenu(messageEl, triggerEl) {
             } else {
                 showToast("Copy unavailable", "normal");
             }
+        } else if (action === "reply") {
+            closeMessageActionMenu();
+            enterReplyMode(messageEl);
+            return;
         } else if (action === "edit") {
             if (!canEditMessage(messageEl)) {
                 showToast("Only your text messages can be edited", "normal");
@@ -744,7 +801,16 @@ function updateMessagesRead(messageIds, readAt) {
     });
 }
 
-function addMessage(sender, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "", reactions = null) {
+function buildReplyPreviewHtml(replyTo) {
+    if (!replyTo) return "";
+    const rawSender = replyTo.sender || "Unknown";
+    const sender = rawSender === currentUser ? "You" : rawSender;
+    const content = replyTo.content || "";
+    const replyId = replyTo.id || "";
+    return `<div class="msg-reply-preview" data-reply-id="${replyId}"><span class="msg-reply-sender">${sender}</span><span class="msg-reply-content">${content}</span></div>`;
+}
+
+function addMessage(sender, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "", reactions = null, replyTo = null) {
     const box = document.getElementById("messages");
     const isMe = sender === currentUser;
     const deleted = Boolean(isDeleted || text === "This message was deleted");
@@ -766,6 +832,8 @@ function addMessage(sender, text, imageUrl, timestamp, messageId, status, readAt
         div.dataset.readAt = readAt;
     }
 
+    const replyHtml = buildReplyPreviewHtml(replyTo);
+
     let contentHtml = "";
     if (!deleted && safeImageUrl) {
         contentHtml += `<img src="${safeImageUrl}" onclick="window.open(this.src)" alt="message image">`;
@@ -781,7 +849,17 @@ function addMessage(sender, text, imageUrl, timestamp, messageId, status, readAt
     const statusHtml = isMe ? `<span class="msg-status"></span>` : "";
     const triggerHtml = `<button type="button" class="msg-menu-trigger" style="display:none;" aria-label="Open message actions">...</button>`;
 
-    div.innerHTML = nameHtml + contentHtml + editedHtml + timestampHtml + statusHtml + triggerHtml;
+    div.innerHTML = nameHtml + replyHtml + contentHtml + editedHtml + timestampHtml + statusHtml + triggerHtml;
+
+    // Make reply preview clickable — jump to original message
+    const replyPreviewEl = div.querySelector(".msg-reply-preview");
+    if (replyPreviewEl) {
+        replyPreviewEl.addEventListener("click", (event) => {
+            event.stopPropagation();
+            const replyId = replyPreviewEl.dataset.replyId;
+            if (replyId) jumpToMessageById(replyId);
+        });
+    }
 
     const trigger = div.querySelector(".msg-menu-trigger");
     if (trigger) {
@@ -792,7 +870,7 @@ function addMessage(sender, text, imageUrl, timestamp, messageId, status, readAt
     }
 
     div.addEventListener("click", (event) => {
-        if (event.target.closest(".msg-menu-trigger") || event.target.closest(".message-action-menu") || event.target.closest(".message-action-item")) {
+        if (event.target.closest(".msg-menu-trigger") || event.target.closest(".message-action-menu") || event.target.closest(".message-action-item") || event.target.closest(".msg-reply-preview")) {
             return;
         }
         selectMessage(div);

@@ -147,6 +147,7 @@ async def websocket_endpoint(websocket: WebSocket,
                 friend_username = data.get("room")  # Frontend says "alex"
                 text = data.get("text")
                 img_url = data.get("image_url")
+                reply_to_id = data.get("reply_to_message_id")
 
                 try:
                     friend = chat_service.get_chat_friend(db, user, friend_username)
@@ -155,9 +156,25 @@ async def websocket_endpoint(websocket: WebSocket,
 
                 room_id = get_dm_room(user.username, friend.username)
 
+                # Parse reply_to_message_id if provided
+                parsed_reply_to = None
+                if reply_to_id is not None:
+                    try:
+                        parsed_reply_to = int(reply_to_id)
+                    except (TypeError, ValueError):
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "message": "Invalid reply_to_message_id",
+                        }))
+                        continue
+
                 try:
-                    new_msg = chat_service.create_message(db, user, friend, text, img_url)
-                except chat_service.BadRequestError:
+                    new_msg = chat_service.create_message(db, user, friend, text, img_url, reply_to_message_id=parsed_reply_to)
+                except chat_service.BadRequestError as exc:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": str(exc),
+                    }))
                     continue
 
                 message_payload = chat_service.serialize_message_for_websocket(new_msg, user, friend)

@@ -141,6 +141,21 @@
     /* --- INPUT AREA --- */
     .edit-mode-banner { display: none; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; background: #252525; border-top: 1px solid #303030; color: #ddd; font-size: 13px; }
     .edit-mode-banner button { border: none; background: transparent; color: #7fd5ff; font-size: 12px; cursor: pointer; }
+
+    /* --- REPLY MODE BANNER --- */
+    .reply-mode-banner { display: none; align-items: center; gap: 8px; padding: 8px 12px; background: #252525; border-top: 1px solid #303030; color: #ddd; font-size: 13px; }
+    .reply-mode-banner .reply-banner-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; border-left: 3px solid #4a89ff; padding-left: 8px; }
+    .reply-mode-banner .reply-banner-sender { font-size: 11px; font-weight: 600; color: #7fd5ff; }
+    .reply-mode-banner .reply-banner-content { font-size: 12px; color: #bbb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .reply-mode-banner button { border: none; background: transparent; color: #ffb4b4; font-size: 16px; cursor: pointer; flex-shrink: 0; padding: 2px 4px; line-height: 1; }
+
+    /* --- REPLY PREVIEW INSIDE MESSAGES --- */
+    .msg-reply-preview { display: flex; flex-direction: column; gap: 1px; padding: 6px 10px; border-radius: 10px; background: rgba(255,255,255,0.06); border-left: 3px solid rgba(74,137,255,0.7); cursor: pointer; margin-bottom: 4px; max-width: 100%; overflow: hidden; transition: background 0.15s ease; }
+    .msg-reply-preview:hover { background: rgba(255,255,255,0.1); }
+    .msg-reply-sender { font-size: 11px; font-weight: 600; color: #7fd5ff; }
+    .msg-reply-content { font-size: 12px; color: #bbb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .msg.me .msg-reply-preview { border-left-color: rgba(127,213,255,0.6); }
+    .msg.me .msg-reply-content { color: rgba(255,255,255,0.7); }
     .input-area { padding: 8px; background: #1e1e1e; display: flex; gap: 5px; align-items: center; border-top: 1px solid #2a2a2a; width: 100%; box-sizing: border-box;}
     .input-area input { flex: 1; min-width: 0; width: 100%; padding: 10px; border-radius: 20px; border: none; background: #2a2a2a; color: white; font-size: 16px; outline: none; }
     #send-btn { width: 40px; height: 40px; border-radius: 50%; background: #0084ff; color: white; border: none; font-size: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;  cursor: pointer;}
@@ -292,6 +307,14 @@
         <div id="edit-mode-banner" class="edit-mode-banner">
             <span>Editing message</span>
             <button type="button" onclick="cancelMessageEdit()">Cancel</button>
+        </div>
+
+        <div id="reply-mode-banner" class="reply-mode-banner">
+            <div class="reply-banner-body">
+                <span class="reply-banner-sender"></span>
+                <span class="reply-banner-content"></span>
+            </div>
+            <button type="button" onclick="cancelReplyMode()" title="Cancel reply">&times;</button>
         </div>
 
         <div class="input-area">

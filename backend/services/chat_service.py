@@ -31,6 +31,26 @@ def _serialize_message_timestamp(timestamp: Optional[datetime]) -> Optional[str]
     return timestamp.isoformat().replace("+00:00", "Z")
 
 
+def _build_reply_to_info(message: Message, current_user: User, friend: User) -> Optional[dict]:
+    """Build a compact reply-to dict for serialization, if the message is a reply."""
+    if not message.reply_to_message_id:
+        return None
+
+    parent = message.reply_to  # ORM lazy-loaded
+    if not parent:
+        return {"id": message.reply_to_message_id, "sender": None, "content": "Original message unavailable"}
+
+    parent_deleted = bool(parent.is_deleted)
+    parent_sender = current_user.username if parent.sender_id == current_user.id else friend.username
+    parent_content = "This message was deleted" if parent_deleted else (parent.content or "")
+
+    return {
+        "id": parent.id,
+        "sender": parent_sender,
+        "content": parent_content,
+    }
+
+
 def _message_to_dict(message: Message, current_user: User, friend: User, reactions: Optional[list] = None) -> dict:
     deleted_text = "This message was deleted"
     is_deleted = bool(message.is_deleted)
@@ -48,6 +68,7 @@ def _message_to_dict(message: Message, current_user: User, friend: User, reactio
         "is_deleted": is_deleted,
         "deleted_at": _serialize_message_timestamp(message.deleted_at),
         "reactions": reactions if reactions is not None else [],
+        "reply_to": _build_reply_to_info(message, current_user, friend),
     }
 
 
@@ -101,13 +122,31 @@ def serialize_message_for_websocket(
         "is_deleted": bool(message.is_deleted),
         "deleted_at": _serialize_message_timestamp(message.deleted_at),
         "reactions": reactions if reactions is not None else [],
+        "reply_to": _build_reply_to_info(message, current_user, friend),
     }
     return payload
 
 
-def create_message(db: Session, sender: User, receiver: User, text: Optional[str], image_url: Optional[str]) -> Message:
+def create_message(
+    db: Session,
+    sender: User,
+    receiver: User,
+    text: Optional[str],
+    image_url: Optional[str],
+    reply_to_message_id: Optional[int] = None,
+) -> Message:
     if not text and not image_url:
         raise BadRequestError("Message body cannot be empty")
+
+    if reply_to_message_id is not None:
+        parent = db.query(Message).filter(Message.id == reply_to_message_id).first()
+        if not parent:
+            raise BadRequestError("Reply target message not found")
+        # Verify the parent message belongs to the same conversation
+        parent_pair = {parent.sender_id, parent.receiver_id}
+        current_pair = {sender.id, receiver.id}
+        if parent_pair != current_pair:
+            raise BadRequestError("Reply target does not belong to this conversation")
 
     message = Message(
         sender_id=sender.id,
@@ -115,6 +154,7 @@ def create_message(db: Session, sender: User, receiver: User, text: Optional[str
         content=text,
         image_url=image_url,
         timestamp=datetime.now(timezone.utc),
+        reply_to_message_id=reply_to_message_id,
     )
     db.add(message)
     db.commit()

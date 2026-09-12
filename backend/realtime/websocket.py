@@ -2,6 +2,9 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends
 from sqlalchemy.orm import Session
 from datetime import datetime, UTC
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 from backend.db.database import get_db
 from backend.db.models import User, Friend, Message
@@ -67,7 +70,16 @@ async def websocket_endpoint(websocket: WebSocket,
     try:
         while True:
             raw = await websocket.receive_text()
-            data = json.loads(raw)
+            try:
+                data = json.loads(raw)
+                if not isinstance(data, dict):
+                    raise ValueError("Payload must be a JSON object")
+            except (json.JSONDecodeError, ValueError):
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "message": "Invalid JSON payload",
+                }))
+                continue
 
             msg_type = data.get("type")
 
@@ -423,6 +435,8 @@ async def websocket_endpoint(websocket: WebSocket,
                             await websocket.send_text(json.dumps(reaction_payload))
 
     except WebSocketDisconnect:
+        pass
+    finally:
         # ✅ CLOCK OUT: Remove from global online list
         connection_count = online_users.get(user.id, 0)
         if connection_count <= 1:
@@ -435,7 +449,11 @@ async def websocket_endpoint(websocket: WebSocket,
         # 2. ✅ Update Last Seen in DB
         if connection_count <= 1:
             user.last_seen = datetime.now(UTC)
-            db.commit()
+            try:
+                db.commit()
+            except Exception as exc:
+                db.rollback()
+                logger.error(f"Failed to update last_seen for user {user.username} on disconnect: {exc}")
             print(f"{user.username} disconnected (Offline)")
         else:
             print(f"{user.username} disconnected one tab ({online_users[user.id]} remaining)")

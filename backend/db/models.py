@@ -44,7 +44,7 @@ class Message(Base):
     deleted_at = Column(DateTime, nullable=True)
 
     # Self-referencing optional FK for replies; nullable and doesn't affect existing rows
-    reply_to_message_id = Column(Integer, ForeignKey("messages.id"), nullable=True)
+    reply_to_message_id = Column(Integer, ForeignKey("messages.id", ondelete="SET NULL"), nullable=True)
 
     # ORM relationship to access the parent message and replies collection.
     # remote_side ensures SQLAlchemy understands this is a self-referential relationship.

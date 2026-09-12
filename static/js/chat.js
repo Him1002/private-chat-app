@@ -290,6 +290,8 @@ function startChat(friend, element) {
         statusEl.className = "status offline";
         statusEl.style.color = "#888"; // Gray
     }
+    statusEl.style.display = ""; // Reset display
+
     //document.getElementById("chat-status").innerText = formatLastSeen(friend.last_seen);
 
     // 🔐 CRITICAL: Wipe the "Welcome Screen" or old messages before loading new ones
@@ -317,10 +319,12 @@ function showTyping(sender) {
     if (sender === currentUser) return;
 
     const indicator = document.getElementById("typing-indicator");
+    const statusEl = document.getElementById("chat-status");
 
     if (indicator) {
         indicator.innerText = `${sender} is typing...`;
         indicator.style.display = "block";
+        if (statusEl) statusEl.style.display = "none";
 
         // Clear old timer if exists
         if (window.typingTimeout) clearTimeout(window.typingTimeout);
@@ -328,6 +332,7 @@ function showTyping(sender) {
         // Hide after 3 seconds of silence
         window.typingTimeout = setTimeout(() => {
             indicator.style.display = "none";
+            if (statusEl) statusEl.style.display = "";
         }, 3000); // 3000ms
     } else {
         console.error("✘ [STEP 3 FAILED] Could not find #typing-indicator div in HTML");

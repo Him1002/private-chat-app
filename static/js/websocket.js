@@ -77,13 +77,6 @@ function handleSocketMessage(e) {
             updateDeletedMessage(data.id, data.text, data.deleted_at);
         }
     } else if (data.type === "typing") {
-        if (data.sender === currentFriend) {
-            const statusEl = document.getElementById("chat-status");
-            statusEl.innerText = "Online";
-            statusEl.className = "status online";
-            statusEl.style.color = "#2ecc71";
-        }
-
         if (typeof showTyping === "function") {
             showTyping(data.sender);
         }

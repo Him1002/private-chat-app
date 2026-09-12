@@ -44,9 +44,11 @@ def _build_reply_to_info(message: Message, current_user: User, friend: User) -> 
     parent_sender = current_user.username if parent.sender_id == current_user.id else friend.username
     parent_content = "This message was deleted" if parent_deleted else (parent.content or "")
 
+    parent_sender_display_name = current_user.display_name if parent.sender_id == current_user.id else friend.display_name
     return {
         "id": parent.id,
         "sender": parent_sender,
+        "sender_display_name": parent_sender_display_name,
         "content": parent_content,
     }
 
@@ -57,6 +59,7 @@ def _message_to_dict(message: Message, current_user: User, friend: User, reactio
     return {
         "id": message.id,
         "sender": current_user.username if message.sender_id == current_user.id else friend.username,
+        "sender_display_name": current_user.display_name if message.sender_id == current_user.id else friend.display_name,
         "receiver": friend.username if message.sender_id == current_user.id else current_user.username,
         "content": deleted_text if is_deleted else message.content,
         "image_url": None if is_deleted else message.image_url,
@@ -113,6 +116,7 @@ def serialize_message_for_websocket(
         "id": message.id,
         "type": event_type,
         "sender": current_user.username if message.sender_id == current_user.id else friend.username,
+        "sender_display_name": current_user.display_name if message.sender_id == current_user.id else friend.display_name,
         "text": deleted_text if message.is_deleted else message.content,
         "image_url": None if message.is_deleted else message.image_url,
         "timestamp": _serialize_message_timestamp(message.timestamp),

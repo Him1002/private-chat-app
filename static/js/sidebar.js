@@ -97,9 +97,18 @@ async function handleSearch(e) {
             action = `<span class="status">Friend</span>`;
         }
 
+        const avatarHtml = item.profile_picture 
+            ? `<img src="${item.profile_picture}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">` 
+            : item.username[0].toUpperCase();
+            
+        const displayName = item.display_name || item.username;
+
         div.innerHTML = `
-            <div class="avatar">${item.username[0].toUpperCase()}</div>
-            <div class="info"><span class="name">${item.username}</span></div>
+            <div class="avatar">${avatarHtml}</div>
+            <div class="info">
+                <span class="name">${displayName}</span>
+                ${item.about ? `<span class="status" style="opacity: 0.7; font-size: 11px;">${item.about}</span>` : ''}
+            </div>
             ${action}
         `;
         list.appendChild(div);
@@ -111,7 +120,8 @@ function renderFriendItem(container, f) {
     div.className = "item";
     if (currentTab === 'chats' && currentFriend === f.username) div.classList.add("active");
 
-    const avatarUrl = `https://api.dicebear.com/7.x/notionists/svg?seed=${f.username}&backgroundColor=b6e3f4,c0aede,d1d4f9`;
+    const avatarUrl = f.profile_picture || `https://api.dicebear.com/7.x/notionists/svg?seed=${f.username}&backgroundColor=b6e3f4,c0aede,d1d4f9`;
+    const displayName = f.display_name || f.username;
     
     // Use Backend "is_online" truth
     const isOnline = f.is_online; 
@@ -119,10 +129,10 @@ function renderFriendItem(container, f) {
 
     div.innerHTML = `
         <div class="avatar">
-            <img src="${avatarUrl}">
+            <img src="${avatarUrl}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
         </div>
         <div class="info">
-            <span class="name">${f.username}</span>
+            <span class="name">${displayName}</span>
             <span class="status ${isOnline ? 'online' : ''}">${seenText}</span>
         </div>
     `;

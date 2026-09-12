@@ -42,6 +42,9 @@ def search_users(db: Session, query: str, current_user_id: int) -> List[Dict]:
 
         results.append({
             "username": user.username,
+            "display_name": user.display_name,
+            "about": user.about,
+            "profile_picture": user.profile_picture,
             "status": status
         })
 
@@ -149,6 +152,9 @@ def get_friends_list(db: Session, current_user_id: int, online_users: Optional[s
 
             results.append({
                 "username": friend_user.username,
+                "display_name": friend_user.display_name,
+                "about": friend_user.about,
+                "profile_picture": friend_user.profile_picture,
                 "last_seen": friend_user.last_seen,
                 "is_online": is_active
             })

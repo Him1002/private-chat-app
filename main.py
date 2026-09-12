@@ -45,3 +45,6 @@ from backend.api.upload import router as upload_router, register_uploads
 app.include_router(upload_router)
 # Mount the uploads static directory (preserves previous behavior)
 register_uploads(app)
+
+from backend.api.profile import router as profile_router
+app.include_router(profile_router)

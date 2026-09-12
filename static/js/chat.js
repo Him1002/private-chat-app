@@ -277,7 +277,7 @@ function startChat(friend, element) {
     document.querySelectorAll(".item").forEach(el => el.classList.remove("active"));
     if (element) element.classList.add("active");
 
-    document.getElementById("chat-title").innerText = friend.username;
+    document.getElementById("chat-title").innerText = friend.display_name || friend.username;
     const statusEl = document.getElementById("chat-status");
 
     // ✓ Using the exact 'is_online' property from your database/server
@@ -804,13 +804,14 @@ function updateMessagesRead(messageIds, readAt) {
 function buildReplyPreviewHtml(replyTo) {
     if (!replyTo) return "";
     const rawSender = replyTo.sender || "Unknown";
-    const sender = rawSender === currentUser ? "You" : rawSender;
+    const displayName = replyTo.sender_display_name || rawSender;
+    const sender = rawSender === currentUser ? "You" : displayName;
     const content = replyTo.content || "";
     const replyId = replyTo.id || "";
     return `<div class="msg-reply-preview" data-reply-id="${replyId}"><span class="msg-reply-sender">${sender}</span><span class="msg-reply-content">${content}</span></div>`;
 }
 
-function addMessage(sender, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "", reactions = null, replyTo = null) {
+function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "", reactions = null, replyTo = null) {
     const box = document.getElementById("messages");
     const isMe = sender === currentUser;
     const deleted = Boolean(isDeleted || text === "This message was deleted");
@@ -842,7 +843,8 @@ function addMessage(sender, text, imageUrl, timestamp, messageId, status, readAt
         contentHtml += `<span class="msg-text">${safeText}</span>`;
     }
 
-    const nameHtml = isMe ? "" : `<span class="sender-name">${sender}</span>`;
+    const displayName = senderDisplayName || sender;
+    const nameHtml = isMe ? "" : `<span class="sender-name">${displayName}</span>`;
     const editedHtml = deleted ? "" : (editedAt ? `<span class="msg-edited">(edited)</span>` : "");
     const timeLabel = formatMessageTimestamp(timestamp);
     const timestampHtml = timeLabel ? `<span class="msg-time" style="display:none;">${timeLabel}</span>` : "";

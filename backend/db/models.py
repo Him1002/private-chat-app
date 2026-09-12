@@ -10,6 +10,10 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     last_seen = Column(DateTime, default=datetime.now(UTC))
+    # Profile fields
+    display_name = Column(String, nullable=True)
+    about = Column(String, nullable=True)
+    profile_picture = Column(String, nullable=True)
 
 class Friend(Base):
     __tablename__ = "friends"

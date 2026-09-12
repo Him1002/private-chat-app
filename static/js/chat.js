@@ -272,6 +272,10 @@ function startChat(friend, element) {
     cancelReplyMode(true);
     resetConversationSearchUI(true);
     currentFriend = friend.username;
+    friend.unread_count = 0;
+    if (typeof updateSidebarUnread === "function") {
+        updateSidebarUnread(friend.username, 0);
+    }
 
     // UI Updates
     document.querySelectorAll(".item").forEach(el => el.classList.remove("active"));

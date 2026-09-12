@@ -62,9 +62,15 @@ function handleSocketMessage(e) {
     const data = JSON.parse(e.data);
 
     if (data.type === "chat") {
-        const indicators = document.querySelectorAll("#typing-indicator, .typing-indicator");
-        indicators.forEach(ind => ind.style.display = "none");
-        addMessage(data.sender, data.sender_display_name, data.text, data.image_url, data.timestamp, data.id, data.status, data.read_at, data.edited_at, data.is_deleted, data.deleted_at, data.reactions, data.reply_to);
+        const isFromCurrentFriend = (currentFriend && data.sender === currentFriend);
+        const isFromMe = (data.sender === currentUser);
+        if (isFromCurrentFriend || isFromMe) {
+            const indicators = document.querySelectorAll("#typing-indicator, .typing-indicator");
+            indicators.forEach(ind => ind.style.display = "none");
+            addMessage(data.sender, data.sender_display_name, data.text, data.image_url, data.timestamp, data.id, data.status, data.read_at, data.edited_at, data.is_deleted, data.deleted_at, data.reactions, data.reply_to);
+        } else if (typeof loadSidebar === "function") {
+            loadSidebar();
+        }
     } else if (data.type === "message_updated") {
         if (typeof updateMessageContent === "function") {
             updateMessageContent(data.id, data.text, data.edited_at);

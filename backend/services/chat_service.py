@@ -167,20 +167,29 @@ def create_message(
     return message
 
 
+def get_unread_count(db: Session, current_user_id: int, friend_id: int) -> int:
+    """Return the count of unread incoming messages from friend_id to current_user_id.
+
+    Excludes the user's own sent messages and deleted messages.
+    """
+    return (
+        db.query(Message)
+        .filter(
+            Message.sender_id == friend_id,
+            Message.receiver_id == current_user_id,
+            Message.is_read.is_(False),
+            Message.is_deleted.is_(False),
+        )
+        .count()
+    )
+
+
 def list_conversations(db: Session, current_user: User) -> List[Dict]:
     """Return a list of conversations for the current user.
 
-    Each conversation dict has the same shape previously returned by the controller:
+    Each conversation dict has the shape:
     {"username", "last_message", "last_message_time", "unread_count"}
     """
-    # Get friendships where the current user is the owner of the row
-    friendships = (
-        db.query(User)
-        # We need Friend model but avoid importing it directly here to keep logic simple; query Friend via relationship
-    )
-
-    # The original controller queried Friend rows where Friend.user_id == current_user.id.
-    # Reconstruct the same behavior by querying Friend via the user relationship in the DB models
     from backend.db.models import Friend
 
     friendships = (
@@ -211,12 +220,14 @@ def list_conversations(db: Session, current_user: User) -> List[Dict]:
         if last_message is not None:
             last_message_text = "This message was deleted" if last_message.is_deleted else last_message.content
 
+        unread_count = get_unread_count(db, current_user.id, friend.id)
+
         conversations.append(
             {
                 "username": friend.username,
                 "last_message": last_message_text,
                 "last_message_time": last_message.timestamp.isoformat() if last_message else None,
-                "unread_count": 0,
+                "unread_count": unread_count,
             }
         )
 

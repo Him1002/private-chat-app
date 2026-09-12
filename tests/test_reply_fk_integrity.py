@@ -8,70 +8,18 @@ PRAGMA foreign_keys = ON so that FK constraints are actually enforced
 import unittest
 from datetime import datetime, timezone
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import sessionmaker
 
-from backend.db.database import Base
-from backend.db.models import User, Friend, Message
+from backend.db.models import Message
 from backend.services import chat_service
 from backend.services.chat_service import BadRequestError
+from tests.base import BaseTestCase
 
 
-def _enable_fk(dbapi_conn, connection_record):
-    """Enable FK enforcement on every new SQLite connection."""
-    cursor = dbapi_conn.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
-
-
-class TestReplyFKIntegrity(unittest.TestCase):
+class TestReplyFKIntegrity(BaseTestCase):
     """Database-level foreign-key constraint tests for reply_to_message_id."""
 
-    def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:",
-            connect_args={"check_same_thread": False},
-        )
-        # Enable FK enforcement for every connection SQLAlchemy opens.
-        event.listen(self.engine, "connect", _enable_fk)
-
-        Base.metadata.create_all(bind=self.engine)
-        self.SessionLocal = sessionmaker(
-            autocommit=False, autoflush=False, bind=self.engine,
-        )
-        self.db = self.SessionLocal()
-
-        # Confirm FK enforcement is active
-        result = self.db.execute(text("PRAGMA foreign_keys")).scalar()
-        assert result == 1, "PRAGMA foreign_keys must be ON for these tests"
-
-        # Seed users
-        self.alice = User(
-            username="alice", password_hash="hash1", display_name="Alice",
-        )
-        self.bob = User(
-            username="bob", password_hash="hash2", display_name="Bob",
-        )
-        self.charlie = User(
-            username="charlie", password_hash="hash3", display_name="Charlie",
-        )
-        self.db.add_all([self.alice, self.bob, self.charlie])
-        self.db.commit()
-        self.db.refresh(self.alice)
-        self.db.refresh(self.bob)
-        self.db.refresh(self.charlie)
-
-        # Friendships: alice <-> bob, alice <-> charlie
-        self.db.add(Friend(user_id=self.alice.id, friend_id=self.bob.id, status="accepted"))
-        self.db.add(Friend(user_id=self.bob.id, friend_id=self.alice.id, status="accepted"))
-        self.db.add(Friend(user_id=self.alice.id, friend_id=self.charlie.id, status="accepted"))
-        self.db.add(Friend(user_id=self.charlie.id, friend_id=self.alice.id, status="accepted"))
-        self.db.commit()
-
-    def tearDown(self):
-        self.db.close()
-        Base.metadata.drop_all(bind=self.engine)
 
     # ------------------------------------------------------------------
     # 1. reply_to_message_id can be NULL

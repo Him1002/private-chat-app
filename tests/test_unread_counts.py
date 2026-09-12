@@ -1,45 +1,12 @@
 import unittest
-from datetime import datetime, timezone
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from backend.db.database import Base
-from backend.db.models import User, Friend, Message
+from backend.db.models import Message
 from backend.services import chat_service
+from tests.base import BaseTestCase
 
 
-class TestRealUnreadCounts(unittest.TestCase):
-    def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:",
-            connect_args={"check_same_thread": False},
-        )
-        Base.metadata.create_all(bind=self.engine)
-        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
-        self.db = self.SessionLocal()
+class TestRealUnreadCounts(BaseTestCase):
 
-        # Seed test users
-        self.alice = User(username="alice", password_hash="hash1", display_name="Alice")
-        self.bob = User(username="bob", password_hash="hash2", display_name="Bob")
-        self.charlie = User(username="charlie", password_hash="hash3", display_name="Charlie")
-        self.db.add_all([self.alice, self.bob, self.charlie])
-        self.db.commit()
-        self.db.refresh(self.alice)
-        self.db.refresh(self.bob)
-        self.db.refresh(self.charlie)
-
-        # Establish two-way accepted friendships
-        # alice <-> bob
-        self.db.add(Friend(user_id=self.alice.id, friend_id=self.bob.id, status="accepted"))
-        self.db.add(Friend(user_id=self.bob.id, friend_id=self.alice.id, status="accepted"))
-        # alice <-> charlie
-        self.db.add(Friend(user_id=self.alice.id, friend_id=self.charlie.id, status="accepted"))
-        self.db.add(Friend(user_id=self.charlie.id, friend_id=self.alice.id, status="accepted"))
-        self.db.commit()
-
-    def tearDown(self):
-        self.db.close()
-        Base.metadata.drop_all(bind=self.engine)
 
     def _get_conv(self, current_user, friend_username):
         conversations = chat_service.list_conversations(self.db, current_user)

@@ -66,7 +66,13 @@ async def websocket_endpoint(websocket: WebSocket,
         await websocket.close(code=1008)
         return
 
-    user = verify_ws_token(token.strip(), db)
+    try:
+        user = verify_ws_token(token.strip(), db)
+    except Exception as exc:
+        logger.error("Unexpected error verifying WebSocket token: %s", exc, exc_info=True)
+        await websocket.close(code=1011)
+        return
+
     if not user:
         await websocket.close(code=1008)
         return
@@ -75,7 +81,7 @@ async def websocket_endpoint(websocket: WebSocket,
 
     # ✅ CLOCK IN: Mark as globally online
     online_users[user.id] = online_users.get(user.id, 0) + 1
-    print(f"{user.username} connected (Online)")
+    logger.info("%s connected (Online)", user.username)
 
     try:
         while True:
@@ -505,6 +511,33 @@ async def websocket_endpoint(websocket: WebSocket,
 
     except WebSocketDisconnect:
         pass
+    except Exception as exc:
+        logger.error(
+            "Unexpected error in WebSocket connection for user '%s': %s",
+            getattr(user, "username", "unknown"),
+            exc,
+            exc_info=True,
+        )
+        # Attempt safe database rollback so transaction state is clean
+        try:
+            db.rollback()
+        except Exception as db_exc:
+            logger.debug("Failed to rollback DB session after WebSocket error: %s", db_exc)
+
+        # Attempt to inform the client with generic error payload if socket is still open
+        try:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": "An unexpected error occurred",
+            }))
+        except Exception:
+            pass
+
+        # Attempt defensive close with code 1011 (Internal Error)
+        try:
+            await websocket.close(code=1011)
+        except Exception:
+            pass
     finally:
         # ✅ CLOCK OUT: Remove from global online list
         connection_count = online_users.get(user.id, 0)
@@ -523,6 +556,6 @@ async def websocket_endpoint(websocket: WebSocket,
             except Exception as exc:
                 db.rollback()
                 logger.error(f"Failed to update last_seen for user {user.username} on disconnect: {exc}")
-            print(f"{user.username} disconnected (Offline)")
+            logger.info("%s disconnected (Offline)", user.username)
         else:
-            print(f"{user.username} disconnected one tab ({online_users[user.id]} remaining)")
+            logger.info("%s disconnected one tab (%s remaining)", user.username, online_users[user.id])

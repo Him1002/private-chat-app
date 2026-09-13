@@ -5,10 +5,13 @@ This module encapsulates business logic for user authentication, registration,
 password validation, rate limiting checks, and anti-enumeration timing defenses.
 """
 
+import logging
 from datetime import datetime, timedelta, UTC
 from typing import Optional
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from backend.core.config import settings
 from backend.core.security import (
@@ -44,6 +47,7 @@ def authenticate_user(db: Session, username: str, password: str, client_ip: str)
     # 1. Rate limit check (triggered if threshold of failed attempts was reached)
     is_limited, retry_after = failed_login_limiter.is_rate_limited(client_ip)
     if is_limited:
+        logger.warning("Authentication rate limit exceeded for IP %s", client_ip)
         raise HTTPException(
             status_code=429,
             detail="Too many failed login attempts. Please try again later.",
@@ -67,6 +71,7 @@ def authenticate_user(db: Session, username: str, password: str, client_ip: str)
 
     # 5. Successful login: reset failed attempts for this client IP
     failed_login_limiter.reset_key(client_ip)
+    logger.info("Successful login for user '%s'", user.username)
 
     # 6. Generate access token
     token = create_access_token(
@@ -96,6 +101,7 @@ def register_user(db: Session, username: str, password: str, client_ip: str) -> 
     # 1. Rate limit check before expensive operations
     is_limited, retry_after = registration_limiter.is_rate_limited(client_ip)
     if is_limited:
+        logger.warning("Registration rate limit exceeded for IP %s", client_ip)
         raise HTTPException(
             status_code=429,
             detail="Too many registration attempts. Please try again later.",
@@ -129,5 +135,6 @@ def register_user(db: Session, username: str, password: str, client_ip: str) -> 
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    logger.info("User registered successfully: '%s'", new_user.username)
 
     return new_user

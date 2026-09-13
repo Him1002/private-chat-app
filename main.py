@@ -12,12 +12,19 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 
-# Import configuration and security middleware
+# Import configuration, logging, and security middleware
 from backend.core.config import settings
 from backend.core.security import SecurityHeadersMiddleware
+from backend.core.logging_config import setup_logging
+from backend.core.error_handlers import register_exception_handlers
 
+# Initialize standard-library logging configuration early
+setup_logging()
 
 app = FastAPI()
+
+# Register centralized exception handlers (S5-T07)
+register_exception_handlers(app)
 
 # ================= SECURITY MIDDLEWARE =================
 # Configurable CORS (S5-T05)

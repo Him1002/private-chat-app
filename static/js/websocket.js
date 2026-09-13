@@ -61,7 +61,40 @@ function sendSocketPayload(payload) {
 function handleSocketMessage(e) {
     const data = JSON.parse(e.data);
 
-    if (data.type === "chat") {
+    // Call and WebRTC signaling events
+    if (data.type === "call.accept") {
+        if (typeof WebRTCManager !== "undefined" && typeof WebRTCManager.handleCallAccept === "function") {
+            WebRTCManager.handleCallAccept(data.call_id);
+        }
+    } else if (data.type === "call.reject") {
+        if (typeof WebRTCManager !== "undefined" && typeof WebRTCManager.handleCallReject === "function") {
+            WebRTCManager.handleCallReject(data.call_id, data.reason);
+        }
+    } else if (data.type === "call.cancel") {
+        if (typeof WebRTCManager !== "undefined" && typeof WebRTCManager.handleCallCancel === "function") {
+            WebRTCManager.handleCallCancel(data.call_id);
+        }
+    } else if (data.type === "call.end") {
+        if (typeof WebRTCManager !== "undefined" && typeof WebRTCManager.handleCallEnd === "function") {
+            WebRTCManager.handleCallEnd(data.call_id);
+        }
+    } else if (data.type === "webrtc.offer") {
+        if (typeof WebRTCManager !== "undefined" && typeof WebRTCManager.handleWebRTCOffer === "function") {
+            WebRTCManager.handleWebRTCOffer(data.call_id, data.sdp);
+        }
+    } else if (data.type === "webrtc.answer") {
+        if (typeof WebRTCManager !== "undefined" && typeof WebRTCManager.handleWebRTCAnswer === "function") {
+            WebRTCManager.handleWebRTCAnswer(data.call_id, data.sdp);
+        }
+    } else if (data.type === "webrtc.ice_candidate") {
+        if (typeof WebRTCManager !== "undefined" && typeof WebRTCManager.handleWebRTCICECandidate === "function") {
+            WebRTCManager.handleWebRTCICECandidate(data.call_id, data.candidate);
+        }
+    } else if (data.type === "call.invite") {
+        if (typeof WebRTCManager !== "undefined" && typeof WebRTCManager.handleCallInvite === "function") {
+            WebRTCManager.handleCallInvite(data);
+        }
+    } else if (data.type === "chat") {
         const isFromCurrentFriend = (currentFriend && data.sender === currentFriend);
         const isFromMe = (data.sender === currentUser);
         if (isFromCurrentFriend || isFromMe) {

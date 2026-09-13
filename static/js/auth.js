@@ -49,6 +49,9 @@ async function handleAuth() {
 
 function logout() {
     // 1. Close session-level work
+    if (typeof cleanupWebRTCCall === "function") {
+        cleanupWebRTCCall();
+    }
     disconnectWebSocket();
     stopPresenceRefresh();
 

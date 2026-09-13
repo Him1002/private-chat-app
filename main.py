@@ -20,6 +20,9 @@ from backend.core.error_handlers import register_exception_handlers
 
 # Initialize standard-library logging configuration early
 setup_logging()
+import logging
+logger = logging.getLogger(__name__)
+logger.info("ChatSpic application initialized (environment=%s)", settings.ENVIRONMENT)
 
 app = FastAPI()
 
@@ -49,6 +52,16 @@ app.mount("/static", StaticFiles(directory=settings.STATIC_DIR), name="static")
 @app.get("/")
 def frontend():
     return FileResponse(os.path.join(settings.STATIC_DIR, "index.html"))
+
+
+@app.get("/health")
+def health_check():
+    """Lightweight health check endpoint for production monitoring and smoke verification.
+
+    Returns HTTP 200 with minimal status JSON without exposing database contents,
+    internal paths, or configuration secrets.
+    """
+    return {"status": "ok"}
 
 
 

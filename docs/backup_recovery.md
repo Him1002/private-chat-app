@@ -169,8 +169,10 @@ python -m alembic current
 
 ### Step 5: Restart ChatSpic
 
-Restart the ChatSpic server:
+Restart the ChatSpic server (in production, use `--workers 1` without `--reload`):
 
 ```powershell
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1
 ```
+
+For development environments, you may add `--reload`. See [production_deployment.md](file:///d:/ChatApp2/docs/production_deployment.md) for full deployment procedures.

@@ -81,10 +81,18 @@ class SensitiveDataFilter(logging.Filter):
 
 
 def get_configured_log_level() -> int:
-    """Determine log level from LOG_LEVEL environment variable or default to INFO."""
-    env_level = os.getenv("LOG_LEVEL", "").strip().upper()
-    if env_level:
-        level = getattr(logging, env_level, None)
+    """Determine log level from settings or LOG_LEVEL environment variable, defaulting to INFO."""
+    try:
+        from backend.core.config import settings
+        level_str = getattr(settings, "LOG_LEVEL", "")
+    except Exception:
+        level_str = ""
+
+    if not level_str:
+        level_str = os.getenv("LOG_LEVEL", "").strip().upper()
+
+    if level_str:
+        level = getattr(logging, level_str, None)
         if isinstance(level, int):
             return level
     return logging.INFO

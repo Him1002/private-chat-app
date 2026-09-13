@@ -151,6 +151,17 @@ class Settings:
         if "://" in db_val and not db_val.startswith("sqlite://"):
             raise RuntimeError(f"Unsupported database scheme in URL: {db_val!r}. Only SQLite is supported.")
         self.DATABASE_URL: str = db_val.strip()
+        if self.is_production:
+            is_explicit_in_memory = DATABASE_URL is not None and (
+                self.DATABASE_URL in (":memory:", "sqlite:///:memory:", "sqlite:///:memory:?cache=shared")
+                or ":memory:" in self.DATABASE_URL
+            )
+            is_env_prod_in_memory = os.getenv("ENVIRONMENT") == "production" and (
+                self.DATABASE_URL in (":memory:", "sqlite:///:memory:", "sqlite:///:memory:?cache=shared")
+                or ":memory:" in self.DATABASE_URL
+            )
+            if is_explicit_in_memory or is_env_prod_in_memory:
+                raise RuntimeError("In-memory SQLite database is not permitted in production mode.")
 
         # File paths configuration
         self.UPLOADS_DIR: str = UPLOADS_DIR if UPLOADS_DIR is not None else os.getenv("UPLOADS_DIR", "uploads")

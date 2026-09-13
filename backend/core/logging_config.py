@@ -29,6 +29,11 @@ class SensitiveDataFilter(logging.Filter):
     """
 
     PATTERNS: List[Tuple[re.Pattern, str]] = [
+        # Query string sensitive parameters (token, access_token, secret, password)
+        (
+            re.compile(r"(?i)([?&](?:token|access_token|secret|password)=)[^&\s]+"),
+            r"\1[REDACTED_TOKEN]",
+        ),
         # JWT tokens (three base64url segments separated by dots)
         (
             re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+"),
@@ -143,6 +148,12 @@ def setup_logging(level: Optional[int] = None) -> logging.Logger:
     # Ensure backend logger namespace inherits level and filter
     backend_logger = logging.getLogger("backend")
     backend_logger.setLevel(level)
+
+    # Ensure uvicorn access, error, and server loggers sanitize query credentials and secrets
+    for uvicorn_logger_name in ("uvicorn.access", "uvicorn.error", "uvicorn"):
+        uv_logger = logging.getLogger(uvicorn_logger_name)
+        if not any(isinstance(f, SensitiveDataFilter) for f in uv_logger.filters):
+            uv_logger.addFilter(redaction_filter)
 
     # Keep third-party loggers from spamming normal application logs
     logging.getLogger("passlib").setLevel(logging.WARNING)

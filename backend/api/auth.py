@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.security import get_client_ip, get_current_user
 from backend.db.database import get_db
+from backend.db.models import User
 from backend.services import auth_service
 
 router = APIRouter()
@@ -37,5 +38,5 @@ def register(
 
 
 @router.get("/me")
-def read_me(username: str = Depends(get_current_user)):
-    return {"username": username}
+def read_me(current_user: User = Depends(get_current_user)):
+    return {"username": current_user.username}

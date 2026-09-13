@@ -425,6 +425,15 @@ class TestAuthorization(AuthEndpointTestCase):
         resp_stranger = self.client.get("/chat/history/stranger", headers=alice_headers)
         self.assertEqual(resp_stranger.status_code, 404)
 
+    def test_me_endpoint_returns_username_string_and_no_hash(self):
+        """GET /me must return only the authenticated username string and never leak password_hash."""
+        alice_headers = self.auth_headers("alice")
+        resp = self.client.get("/me", headers=alice_headers)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data, {"username": "alice"})
+        self.assertNotIn("password_hash", str(data))
+
     def test_message_edit_ownership(self):
         """A user may only edit their own message; other users are rejected."""
         # Alice sends message to Bob

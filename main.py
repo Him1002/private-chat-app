@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -17,7 +19,7 @@ app.mount("/static", StaticFiles(directory=settings.STATIC_DIR), name="static")
 
 @app.get("/")
 def frontend():
-    return FileResponse("static/index.html")
+    return FileResponse(os.path.join(settings.STATIC_DIR, "index.html"))
 
 User.metadata.create_all(bind=engine)
 

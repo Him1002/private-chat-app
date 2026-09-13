@@ -1,6 +1,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends
 from sqlalchemy.orm import Session
 from datetime import datetime, UTC
+from typing import Optional
 import json
 import logging
 
@@ -24,6 +25,22 @@ def get_dm_room(user1, user2):
     return f"dm_{min(user1, user2)}_{max(user1, user2)}"
 
 
+def parse_integer_id(val) -> Optional[int]:
+    """Validate and parse a positive integer ID, rejecting booleans, floats, negatives, and invalid types."""
+    if val is None or isinstance(val, bool):
+        return None
+    if isinstance(val, int):
+        return val if val > 0 else None
+    if isinstance(val, str):
+        val = val.strip()
+        if val.isdigit():
+            try:
+                parsed = int(val)
+                return parsed if parsed > 0 else None
+            except ValueError:
+                return None
+    return None
+
 
 def remove_connection_from_rooms(websocket: WebSocket):
     empty_rooms = []
@@ -41,15 +58,20 @@ def remove_connection_from_rooms(websocket: WebSocket):
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket,
-                             token: str = Query(...),
+                             token: Optional[str] = Query(None),
                              db: Session = Depends(get_db)
                              ):
-    await websocket.accept()
+    # Pre-accept token validation (SEC-07): Reject unauthenticated connections before accept
+    if not token or not isinstance(token, str) or not token.strip():
+        await websocket.close(code=1008)
+        return
 
-    user = verify_ws_token(token, db)
+    user = verify_ws_token(token.strip(), db)
     if not user:
         await websocket.close(code=1008)
         return
+
+    await websocket.accept()
 
     # ✅ CLOCK IN: Mark as globally online
     online_users[user.id] = online_users.get(user.id, 0) + 1
@@ -70,6 +92,12 @@ async def websocket_endpoint(websocket: WebSocket,
                 continue
 
             msg_type = data.get("type")
+            if not isinstance(msg_type, str) or not msg_type.strip():
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "message": "Missing or invalid event type",
+                }))
+                continue
 
             # ✅ UPDATE ACTIVITY: Keep them "Fresh" in DB while chatting
             # (updates Last Seen timestamp without waiting for disconnect)
@@ -79,8 +107,15 @@ async def websocket_endpoint(websocket: WebSocket,
             # ---------------- TYPING SIGNAL (New) ----------------
             if msg_type == "typing":
                 friend_username = data.get("room")
+                if not isinstance(friend_username, str) or not friend_username.strip():
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Invalid room for typing event",
+                    }))
+                    continue
+
                 # Calculate room ID to find the socket
-                room_id = get_dm_room(user.username, friend_username)
+                room_id = get_dm_room(user.username, friend_username.strip())
 
                 if room_id in rooms:
                     for conn, member in rooms[room_id]:
@@ -94,6 +129,14 @@ async def websocket_endpoint(websocket: WebSocket,
             # ---------------- JOIN ROOM ----------------
             if msg_type == "join":
                 friend_username = data.get("room")
+                if not isinstance(friend_username, str) or not friend_username.strip():
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Invalid room",
+                    }))
+                    continue
+
+                friend_username = friend_username.strip()
 
                 try:
                     friend = chat_service.get_chat_friend(db, user, friend_username)
@@ -145,8 +188,30 @@ async def websocket_endpoint(websocket: WebSocket,
             # ---------------- CHAT MESSAGE ----------------
             elif msg_type == "chat":
                 friend_username = data.get("room")  # Frontend says "alex"
+                if not isinstance(friend_username, str) or not friend_username.strip():
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Invalid room",
+                    }))
+                    continue
+
+                friend_username = friend_username.strip()
                 text = data.get("text")
+                if text is not None and not isinstance(text, str):
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Message text must be a string",
+                    }))
+                    continue
+
                 img_url = data.get("image_url")
+                if img_url is not None and not isinstance(img_url, str):
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Image URL must be a string",
+                    }))
+                    continue
+
                 reply_to_id = data.get("reply_to_message_id")
 
                 try:
@@ -159,9 +224,8 @@ async def websocket_endpoint(websocket: WebSocket,
                 # Parse reply_to_message_id if provided
                 parsed_reply_to = None
                 if reply_to_id is not None:
-                    try:
-                        parsed_reply_to = int(reply_to_id)
-                    except (TypeError, ValueError):
+                    parsed_reply_to = parse_integer_id(reply_to_id)
+                    if parsed_reply_to is None:
                         await websocket.send_text(json.dumps({
                             "type": "error",
                             "message": "Invalid reply_to_message_id",
@@ -208,10 +272,9 @@ async def websocket_endpoint(websocket: WebSocket,
 
             # ---------------- DELETE MESSAGE ----------------
             elif msg_type == "message_delete":
-                message_id = data.get("message_id")
-                try:
-                    message_id = int(message_id)
-                except (TypeError, ValueError):
+                raw_message_id = data.get("message_id")
+                message_id = parse_integer_id(raw_message_id)
+                if message_id is None:
                     await websocket.send_text(json.dumps({
                         "type": "error",
                         "message": "Invalid message id",
@@ -272,14 +335,20 @@ async def websocket_endpoint(websocket: WebSocket,
 
             # ---------------- EDIT MESSAGE ----------------
             elif msg_type == "message_edit":
-                message_id = data.get("message_id")
-                text = data.get("text")
-                try:
-                    message_id = int(message_id)
-                except (TypeError, ValueError):
+                raw_message_id = data.get("message_id")
+                message_id = parse_integer_id(raw_message_id)
+                if message_id is None:
                     await websocket.send_text(json.dumps({
                         "type": "error",
                         "message": "Invalid message id",
+                    }))
+                    continue
+
+                text = data.get("text")
+                if text is not None and not isinstance(text, str):
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Message text must be a string",
                     }))
                     continue
 
@@ -332,14 +401,20 @@ async def websocket_endpoint(websocket: WebSocket,
 
             # ---------------- ADD REACTION ----------------
             elif msg_type == "reaction_add":
-                message_id = data.get("message_id")
-                emoji = data.get("emoji")
-                try:
-                    message_id = int(message_id)
-                except (TypeError, ValueError):
+                raw_message_id = data.get("message_id")
+                message_id = parse_integer_id(raw_message_id)
+                if message_id is None:
                     await websocket.send_text(json.dumps({
                         "type": "error",
                         "message": "Invalid message id",
+                    }))
+                    continue
+
+                emoji = data.get("emoji")
+                if not isinstance(emoji, str) or not emoji.strip():
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Invalid emoji",
                     }))
                     continue
 
@@ -381,14 +456,20 @@ async def websocket_endpoint(websocket: WebSocket,
 
             # ---------------- REMOVE REACTION ----------------
             elif msg_type == "reaction_remove":
-                message_id = data.get("message_id")
-                emoji = data.get("emoji")
-                try:
-                    message_id = int(message_id)
-                except (TypeError, ValueError):
+                raw_message_id = data.get("message_id")
+                message_id = parse_integer_id(raw_message_id)
+                if message_id is None:
                     await websocket.send_text(json.dumps({
                         "type": "error",
                         "message": "Invalid message id",
+                    }))
+                    continue
+
+                emoji = data.get("emoji")
+                if not isinstance(emoji, str) or not emoji.strip():
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Invalid emoji",
                     }))
                     continue
 

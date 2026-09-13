@@ -1,15 +1,39 @@
+import mimetypes
 import os
+
+# Ensure standard MIME types across all OS platforms (fixes Windows registry mapping of .js to text/plain)
+mimetypes.init()
+mimetypes.add_type("application/javascript", ".js")
+mimetypes.add_type("application/javascript", ".mjs")
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 
-# Import configuration
+# Import configuration and security middleware
 from backend.core.config import settings
+from backend.core.security import SecurityHeadersMiddleware
 
 
 app = FastAPI()
+
+# ================= SECURITY MIDDLEWARE =================
+# Configurable CORS (S5-T05)
+allow_origins = settings.ALLOWED_ORIGINS
+allow_credentials = bool(allow_origins and "*" not in allow_origins)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allow_origins,
+    allow_credentials=allow_credentials,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# HTTP Security Headers (S5-T05)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.mount("/static", StaticFiles(directory=settings.STATIC_DIR), name="static")
 

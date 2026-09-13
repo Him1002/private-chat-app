@@ -16,8 +16,9 @@ async function openProfile() {
             document.getElementById('profile-about').value = myProfile.about || '';
             
             const preview = document.getElementById('profile-pic-preview');
-            if (myProfile.profile_picture) {
-                preview.src = myProfile.profile_picture;
+            const safePic = sanitizeMediaUrl(myProfile.profile_picture);
+            if (safePic) {
+                preview.src = safePic;
                 preview.style.display = 'block';
             } else {
                 preview.src = '';
@@ -96,8 +97,15 @@ async function handleProfilePicChange(input) {
         });
         
         if (res.ok) {
-            document.getElementById('profile-pic-preview').src = url;
-            document.getElementById('profile-pic-preview').style.display = 'block';
+            const safeUrl = sanitizeMediaUrl(url);
+            const preview = document.getElementById('profile-pic-preview');
+            if (safeUrl) {
+                preview.src = safeUrl;
+                preview.style.display = 'block';
+            } else {
+                preview.src = '';
+                preview.style.display = 'none';
+            }
             showToast("Profile picture updated", "success");
         }
     } catch (e) {

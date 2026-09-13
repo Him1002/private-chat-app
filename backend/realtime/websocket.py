@@ -7,7 +7,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from backend.db.database import get_db
-from backend.db.models import User, Friend, Message
+from backend.db.models import User, Message
 from backend.core.security import verify_ws_token
 from backend.services import chat_service
 from backend.services import reaction_service
@@ -18,23 +18,11 @@ router = APIRouter()
 online_users = {}
 
 rooms = {}  # room_name -> list of (websocket, username)
-room_permissions = {}
 
 
 def get_dm_room(user1, user2):
     return f"dm_{min(user1, user2)}_{max(user1, user2)}"
 
-
-def load_rooms_from_db():
-    db = next(get_db())
-    friendships = db.query(Friend).filter_by(status="accepted").all()
-
-    for f in friendships:
-        room = get_dm_room(f.user_id, f.friend_id)
-        room_permissions[room] = [f.user_id, f.friend_id]
-
-
-load_rooms_from_db()
 
 
 def remove_connection_from_rooms(websocket: WebSocket):

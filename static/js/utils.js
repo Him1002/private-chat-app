@@ -43,4 +43,59 @@ function formatMessageTimestamp(timestamp) {
     return `${day}/${month}/${year} ${String(hours).padStart(2, "0")}:${minutes}:${seconds} ${meridiem}`;
 }
 
+function escapeHtml(str) {
+    if (str === null || str === undefined) return "";
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function sanitizeMediaUrl(url) {
+    if (!url || typeof url !== "string") return "";
+    const trimmed = url.trim();
+    if (!trimmed) return "";
+
+    const lower = trimmed.toLowerCase();
+    if (
+        lower.startsWith("javascript:") ||
+        lower.startsWith("data:") ||
+        lower.startsWith("vbscript:") ||
+        lower.startsWith("//")
+    ) {
+        return "";
+    }
+
+    if (trimmed.startsWith("/uploads/") || trimmed.startsWith("uploads/") || trimmed.startsWith("/")) {
+        return trimmed;
+    }
+
+    try {
+        const base = (typeof window !== "undefined" && window.location && window.location.origin)
+            ? window.location.origin
+            : "http://localhost";
+        const parsed = new URL(trimmed, base);
+        if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+            return trimmed;
+        }
+    } catch (_) {
+        return "";
+    }
+
+    return "";
+}
+
 function handleEnter(e) { if (e.key === "Enter") send(); }
+
+if (typeof module !== "undefined" && module.exports) {
+    module.exports = {
+        escapeHtml,
+        sanitizeMediaUrl,
+        formatMessageTimestamp,
+        formatLastSeen,
+        showToast,
+        handleEnter
+    };
+}

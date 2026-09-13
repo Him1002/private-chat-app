@@ -73,21 +73,46 @@ async function loadSidebar() {
         
         // 1. Friend Requests
         if (requests.length > 0) {
-            list.innerHTML += `<div class="section-title">Requests (${requests.length})</div>`;
+            const reqTitle = document.createElement("div");
+            reqTitle.className = "section-title";
+            reqTitle.textContent = `Requests (${requests.length})`;
+            list.appendChild(reqTitle);
+
             requests.forEach(r => {
                 const div = document.createElement("div");
                 div.className = "item";
-                div.innerHTML = `
-                    <div class="avatar" style="background:#d9534f; border:none;">!</div>
-                    <div class="info"><span class="name">${r.username}</span></div>
-                    <button class="action-btn" onclick="acceptRequest(${r.request_id})" style="background:#28a745">Accept</button>
-                `;
+
+                const avatar = document.createElement("div");
+                avatar.className = "avatar";
+                avatar.style.background = "#d9534f";
+                avatar.style.border = "none";
+                avatar.textContent = "!";
+
+                const info = document.createElement("div");
+                info.className = "info";
+                const nameSpan = document.createElement("span");
+                nameSpan.className = "name";
+                nameSpan.textContent = r.username || "";
+                info.appendChild(nameSpan);
+
+                const acceptBtn = document.createElement("button");
+                acceptBtn.className = "action-btn";
+                acceptBtn.style.background = "#28a745";
+                acceptBtn.textContent = "Accept";
+                acceptBtn.addEventListener("click", () => acceptRequest(r.request_id));
+
+                div.appendChild(avatar);
+                div.appendChild(info);
+                div.appendChild(acceptBtn);
                 list.appendChild(div);
             });
         }
 
         // 2. All Friends (Directory)
-        list.innerHTML += `<div class="section-title">Your Contacts</div>`;
+        const contactsTitle = document.createElement("div");
+        contactsTitle.className = "section-title";
+        contactsTitle.textContent = "Your Contacts";
+        list.appendChild(contactsTitle);
         friends.forEach(f => renderFriendItem(list, f));
     }
 }
@@ -101,35 +126,74 @@ async function handleSearch(e) {
     const list = document.getElementById("list-area");
     list.innerHTML = "";
 
-    if (results.length === 0) list.innerHTML = "<div style='padding:20px;text-align:center;color:#666'>No users found</div>";
+    if (results.length === 0) {
+        const emptyDiv = document.createElement("div");
+        emptyDiv.style.padding = "20px";
+        emptyDiv.style.textAlign = "center";
+        emptyDiv.style.color = "#666";
+        emptyDiv.textContent = "No users found";
+        list.appendChild(emptyDiv);
+        return;
+    }
 
     results.forEach(item => {
         const div = document.createElement("div");
         div.className = "item";
-        let action = "";
 
-        if (item.status === "none") {
-            action = `<button class="action-btn" onclick="addFriend('${item.username}')">Add</button>`;
-        } else if (item.status === "pending") {
-            action = `<span class="status">Sent</span>`;
+        const avatarDiv = document.createElement("div");
+        avatarDiv.className = "avatar";
+        const sanitizedPic = sanitizeMediaUrl(item.profile_picture);
+        if (sanitizedPic) {
+            const img = document.createElement("img");
+            img.src = sanitizedPic;
+            img.alt = "";
+            img.style.width = "100%";
+            img.style.height = "100%";
+            img.style.objectFit = "cover";
+            img.style.borderRadius = "50%";
+            avatarDiv.appendChild(img);
         } else {
-            action = `<span class="status">Friend</span>`;
+            const initial = (item.username && item.username.length > 0) ? item.username[0].toUpperCase() : "?";
+            avatarDiv.textContent = initial;
         }
 
-        const avatarHtml = item.profile_picture 
-            ? `<img src="${item.profile_picture}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">` 
-            : item.username[0].toUpperCase();
-            
-        const displayName = item.display_name || item.username;
+        const infoDiv = document.createElement("div");
+        infoDiv.className = "info";
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "name";
+        nameSpan.textContent = item.display_name || item.username || "";
+        infoDiv.appendChild(nameSpan);
 
-        div.innerHTML = `
-            <div class="avatar">${avatarHtml}</div>
-            <div class="info">
-                <span class="name">${displayName}</span>
-                ${item.about ? `<span class="status" style="opacity: 0.7; font-size: 11px;">${item.about}</span>` : ''}
-            </div>
-            ${action}
-        `;
+        if (item.about) {
+            const aboutSpan = document.createElement("span");
+            aboutSpan.className = "status";
+            aboutSpan.style.opacity = "0.7";
+            aboutSpan.style.fontSize = "11px";
+            aboutSpan.textContent = item.about;
+            infoDiv.appendChild(aboutSpan);
+        }
+
+        div.appendChild(avatarDiv);
+        div.appendChild(infoDiv);
+
+        if (item.status === "none") {
+            const addBtn = document.createElement("button");
+            addBtn.className = "action-btn";
+            addBtn.textContent = "Add";
+            addBtn.addEventListener("click", () => addFriend(item.username));
+            div.appendChild(addBtn);
+        } else if (item.status === "pending") {
+            const sentSpan = document.createElement("span");
+            sentSpan.className = "status";
+            sentSpan.textContent = "Sent";
+            div.appendChild(sentSpan);
+        } else {
+            const friendSpan = document.createElement("span");
+            friendSpan.className = "status";
+            friendSpan.textContent = "Friend";
+            div.appendChild(friendSpan);
+        }
+
         list.appendChild(div);
     });
 }
@@ -148,27 +212,53 @@ function updateSidebarUnread(username, count) {
 function renderFriendItem(container, f) {
     const div = document.createElement("div");
     div.className = "item";
-    div.dataset.username = f.username;
+    div.dataset.username = f.username || "";
     if (currentTab === 'chats' && currentFriend === f.username) div.classList.add("active");
 
-    const avatarUrl = f.profile_picture || `https://api.dicebear.com/7.x/notionists/svg?seed=${f.username}&backgroundColor=b6e3f4,c0aede,d1d4f9`;
-    const displayName = f.display_name || f.username;
+    const fallbackAvatar = `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(f.username || "")}&backgroundColor=b6e3f4,c0aede,d1d4f9`;
+    const avatarUrl = sanitizeMediaUrl(f.profile_picture) || fallbackAvatar;
+    const displayName = f.display_name || f.username || "";
     
     // Use Backend "is_online" truth
     const isOnline = f.is_online; 
     const seenText = isOnline ? "Online" : formatLastSeen(f.last_seen);
     const unreadCount = (currentFriend === f.username) ? 0 : (f.unread_count || 0);
 
-    div.innerHTML = `
-        <div class="avatar">
-            <img src="${avatarUrl}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
-        </div>
-        <div class="info">
-            <span class="name">${displayName}</span>
-            <span class="status ${isOnline ? 'online' : ''}">${seenText}</span>
-        </div>
-        <span class="unread-badge" style="${unreadCount > 0 ? '' : 'display: none;'}">${unreadCount}</span>
-    `;
+    const avatarDiv = document.createElement("div");
+    avatarDiv.className = "avatar";
+    const img = document.createElement("img");
+    img.src = avatarUrl;
+    img.alt = "";
+    img.style.width = "100%";
+    img.style.height = "100%";
+    img.style.objectFit = "cover";
+    img.style.borderRadius = "50%";
+    avatarDiv.appendChild(img);
+
+    const infoDiv = document.createElement("div");
+    infoDiv.className = "info";
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "name";
+    nameSpan.textContent = displayName;
+
+    const statusSpan = document.createElement("span");
+    statusSpan.className = `status ${isOnline ? 'online' : ''}`;
+    statusSpan.textContent = seenText;
+
+    infoDiv.appendChild(nameSpan);
+    infoDiv.appendChild(statusSpan);
+
+    const badgeSpan = document.createElement("span");
+    badgeSpan.className = "unread-badge";
+    if (unreadCount <= 0) {
+        badgeSpan.style.display = "none";
+    }
+    badgeSpan.textContent = String(unreadCount);
+
+    div.appendChild(avatarDiv);
+    div.appendChild(infoDiv);
+    div.appendChild(badgeSpan);
+
     div.onclick = () => startChat(f, div);
     container.appendChild(div);
 }

@@ -110,8 +110,10 @@ function renderMessageReactions(messageEl, reactions) {
 
 function updateMessageReactions(messageId, reactions) {
     if (!messageId) return;
+    const safeId = String(messageId).replace(/[^a-zA-Z0-9_-]/g, "");
+    if (!safeId) return;
     // Select all messages with this ID (handles potential duplicate optimistic UI nodes)
-    const messageEls = document.querySelectorAll(`.msg[data-message-id="${messageId}"]`);
+    const messageEls = document.querySelectorAll(`.msg[data-message-id="${safeId}"]`);
     if (messageEls.length === 0) {
         console.warn("Message element not found for reactions:", messageId);
         return;
@@ -160,7 +162,10 @@ function createSearchResultMeta(message) {
 }
 
 function jumpToMessageById(messageId) {
-    const target = document.querySelector(`.msg[data-message-id="${messageId}"]`);
+    if (!messageId) return;
+    const safeId = String(messageId).replace(/[^a-zA-Z0-9_-]/g, "");
+    if (!safeId) return;
+    const target = document.querySelector(`.msg[data-message-id="${safeId}"]`);
     if (!target) {
         showToast("Message not available in this chat", "normal");
         return;
@@ -810,14 +815,31 @@ function updateMessagesRead(messageIds, readAt) {
     });
 }
 
-function buildReplyPreviewHtml(replyTo) {
-    if (!replyTo) return "";
+function buildReplyPreviewElement(replyTo) {
+    if (!replyTo) return null;
     const rawSender = replyTo.sender || "Unknown";
     const displayName = replyTo.sender_display_name || rawSender;
     const sender = rawSender === currentUser ? "You" : displayName;
     const content = replyTo.content || "";
-    const replyId = replyTo.id || "";
-    return `<div class="msg-reply-preview" data-reply-id="${replyId}"><span class="msg-reply-sender">${sender}</span><span class="msg-reply-content">${content}</span></div>`;
+    const replyId = replyTo.id ? String(replyTo.id) : "";
+
+    const previewDiv = document.createElement("div");
+    previewDiv.className = "msg-reply-preview";
+    if (replyId) {
+        previewDiv.dataset.replyId = replyId;
+    }
+
+    const senderSpan = document.createElement("span");
+    senderSpan.className = "msg-reply-sender";
+    senderSpan.textContent = sender;
+
+    const contentSpan = document.createElement("span");
+    contentSpan.className = "msg-reply-content";
+    contentSpan.textContent = content;
+
+    previewDiv.appendChild(senderSpan);
+    previewDiv.appendChild(contentSpan);
+    return previewDiv;
 }
 
 function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "", reactions = null, replyTo = null) {
@@ -842,43 +864,85 @@ function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messag
         div.dataset.readAt = readAt;
     }
 
-    const replyHtml = buildReplyPreviewHtml(replyTo);
-
-    let contentHtml = "";
-    if (!deleted && safeImageUrl) {
-        contentHtml += `<img src="${safeImageUrl}" onclick="window.open(this.src)" alt="message image">`;
+    // 1. Sender name for friend messages
+    if (!isMe) {
+        const displayName = senderDisplayName || sender || "";
+        const nameEl = document.createElement("span");
+        nameEl.className = "sender-name";
+        nameEl.textContent = displayName;
+        div.appendChild(nameEl);
     }
+
+    // 2. Reply preview (constructed via safe DOM API)
+    if (replyTo) {
+        const replyPreviewEl = buildReplyPreviewElement(replyTo);
+        if (replyPreviewEl) {
+            replyPreviewEl.addEventListener("click", (event) => {
+                event.stopPropagation();
+                const replyId = replyPreviewEl.dataset.replyId;
+                if (replyId) jumpToMessageById(replyId);
+            });
+            div.appendChild(replyPreviewEl);
+        }
+    }
+
+    // 3. Media image
+    const validatedImageUrl = sanitizeMediaUrl(safeImageUrl);
+    if (!deleted && validatedImageUrl) {
+        const imgEl = document.createElement("img");
+        imgEl.src = validatedImageUrl;
+        imgEl.alt = "message image";
+        imgEl.addEventListener("click", () => {
+            window.open(imgEl.src);
+        });
+        div.appendChild(imgEl);
+    }
+
+    // 4. Message text
     if (safeText) {
-        contentHtml += `<span class="msg-text">${safeText}</span>`;
+        const textEl = document.createElement("span");
+        textEl.className = "msg-text";
+        textEl.textContent = safeText;
+        div.appendChild(textEl);
     }
 
-    const displayName = senderDisplayName || sender;
-    const nameHtml = isMe ? "" : `<span class="sender-name">${displayName}</span>`;
-    const editedHtml = deleted ? "" : (editedAt ? `<span class="msg-edited">(edited)</span>` : "");
+    // 5. Edited indicator
+    if (!deleted && editedAt) {
+        const editedEl = document.createElement("span");
+        editedEl.className = "msg-edited";
+        editedEl.textContent = "(edited)";
+        div.appendChild(editedEl);
+    }
+
+    // 6. Timestamp
     const timeLabel = formatMessageTimestamp(timestamp);
-    const timestampHtml = timeLabel ? `<span class="msg-time" style="display:none;">${timeLabel}</span>` : "";
-    const statusHtml = isMe ? `<span class="msg-status"></span>` : "";
-    const triggerHtml = `<button type="button" class="msg-menu-trigger" style="display:none;" aria-label="Open message actions">...</button>`;
-
-    div.innerHTML = nameHtml + replyHtml + contentHtml + editedHtml + timestampHtml + statusHtml + triggerHtml;
-
-    // Make reply preview clickable — jump to original message
-    const replyPreviewEl = div.querySelector(".msg-reply-preview");
-    if (replyPreviewEl) {
-        replyPreviewEl.addEventListener("click", (event) => {
-            event.stopPropagation();
-            const replyId = replyPreviewEl.dataset.replyId;
-            if (replyId) jumpToMessageById(replyId);
-        });
+    if (timeLabel) {
+        const timeEl = document.createElement("span");
+        timeEl.className = "msg-time";
+        timeEl.style.display = "none";
+        timeEl.textContent = timeLabel;
+        div.appendChild(timeEl);
     }
 
-    const trigger = div.querySelector(".msg-menu-trigger");
-    if (trigger) {
-        trigger.addEventListener("click", (event) => {
-            event.stopPropagation();
-            openMessageActionMenu(div, trigger);
-        });
+    // 7. Status ticks for sender
+    if (isMe) {
+        const statusEl = document.createElement("span");
+        statusEl.className = "msg-status";
+        div.appendChild(statusEl);
     }
+
+    // 8. Action menu trigger button
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "msg-menu-trigger";
+    trigger.style.display = "none";
+    trigger.setAttribute("aria-label", "Open message actions");
+    trigger.textContent = "...";
+    trigger.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openMessageActionMenu(div, trigger);
+    });
+    div.appendChild(trigger);
 
     div.addEventListener("click", (event) => {
         if (event.target.closest(".msg-menu-trigger") || event.target.closest(".message-action-menu") || event.target.closest(".message-action-item") || event.target.closest(".msg-reply-preview")) {

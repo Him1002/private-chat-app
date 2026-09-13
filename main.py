@@ -4,8 +4,6 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from backend.db.database import engine
-from backend.db.models import User
 
 # Import configuration
 from backend.core.config import settings
@@ -21,7 +19,6 @@ app.mount("/static", StaticFiles(directory=settings.STATIC_DIR), name="static")
 def frontend():
     return FileResponse(os.path.join(settings.STATIC_DIR, "index.html"))
 
-User.metadata.create_all(bind=engine)
 
 
 # ================= ROUTES =================

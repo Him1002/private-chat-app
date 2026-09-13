@@ -6,6 +6,7 @@ from sqlalchemy import pool
 from alembic import context
 from backend.db.database import Base
 import backend.db.models  # noqa: F401
+from backend.core.config import settings
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -28,6 +29,18 @@ target_metadata = Base.metadata
 # ... etc.
 
 
+def get_database_url() -> str:
+    """Return the database URL to use for migrations.
+
+    Preserves explicitly configured sqlalchemy.url options set programmatically
+    by tests or callers. Defaults to settings.DATABASE_URL if not explicitly overridden.
+    """
+    configured_url = config.get_main_option("sqlalchemy.url")
+    if configured_url and configured_url != "sqlite:///./chat.db":
+        return configured_url
+    return settings.DATABASE_URL or configured_url or "sqlite:///./chat.db"
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -40,7 +53,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    url = get_database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -60,8 +73,10 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    configuration = config.get_section(config.config_ini_section, {})
+    configuration["sqlalchemy.url"] = get_database_url()
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

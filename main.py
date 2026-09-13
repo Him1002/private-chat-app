@@ -91,3 +91,7 @@ register_uploads(app)
 
 from backend.api.profile import router as profile_router
 app.include_router(profile_router)
+
+from backend.api.call import router as call_router
+app.include_router(call_router)
+

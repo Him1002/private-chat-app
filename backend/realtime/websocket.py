@@ -12,13 +12,315 @@ from backend.db.models import User, Message
 from backend.core.security import verify_ws_token
 from backend.services import chat_service
 from backend.services import reaction_service
+from backend.core.config import settings
+from backend.services import call_service
+from backend.services.friend_service import are_friends
 
 router = APIRouter()
 
 # ✅ NEW: A simple set to track the IDs of everyone currently connected
 online_users = {}
 
+# Connected sockets registry for call signaling: user_id -> list of active WebSockets
+connected_sockets = {}
+
 rooms = {}  # room_name -> list of (websocket, username)
+
+
+async def deliver_to_user(user_id: int, payload: dict) -> int:
+    """Deliver a signaling payload to all connected sockets of a user.
+    Safely prunes dead/closed sockets. Returns count of successfully sent messages.
+    """
+    sockets = connected_sockets.get(user_id, [])
+    if not sockets:
+        return 0
+
+    text = json.dumps(payload)
+    dead_sockets = []
+    delivered = 0
+    for ws in list(sockets):
+        try:
+            await ws.send_text(text)
+            delivered += 1
+        except Exception as exc:
+            logger.debug("Failed sending signaling to socket for user %s: %s", user_id, exc)
+            dead_sockets.append(ws)
+
+    for dead in dead_sockets:
+        if dead in sockets:
+            sockets.remove(dead)
+    if not sockets and user_id in connected_sockets:
+        connected_sockets.pop(user_id, None)
+
+    return delivered
+
+
+async def handle_call_message(
+    websocket: WebSocket,
+    user: User,
+    db: Session,
+    data: dict,
+    msg_type: str,
+):
+    """Handle incoming call signaling and WebRTC message events."""
+    call_id = data.get("call_id")
+    if not isinstance(call_id, str) or not call_id.strip():
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "message": "Missing or invalid call_id",
+        }))
+        return
+
+    call_id = call_id.strip()
+
+    # 1. ---------------- CALL INVITE ----------------
+    if msg_type == "call.invite":
+        call_type = data.get("call_type")
+        if call_type not in ("voice", "video"):
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": "call_type must be 'voice' or 'video'",
+                "call_id": call_id,
+            }))
+            return
+
+        target_identifier = data.get("to_user_id") if data.get("to_user_id") is not None else data.get("to_username")
+        if target_identifier is None:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": "Missing target user",
+                "call_id": call_id,
+            }))
+            return
+
+        target_user = None
+        parsed_id = parse_integer_id(target_identifier)
+        if parsed_id is not None:
+            target_user = db.query(User).filter(User.id == parsed_id).first()
+        if not target_user and isinstance(target_identifier, str) and target_identifier.strip():
+            target_user = db.query(User).filter(User.username == target_identifier.strip()).first()
+
+        if not target_user:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": "User does not exist",
+                "call_id": call_id,
+            }))
+            return
+
+        if target_user.id == user.id:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": "Cannot call yourself",
+                "call_id": call_id,
+            }))
+            return
+
+        if not are_friends(db, user.id, target_user.id):
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": "You are not friends",
+                "call_id": call_id,
+            }))
+            return
+
+        if call_service.is_user_in_call(user.id):
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": "You are already in an active call",
+                "call_id": call_id,
+            }))
+            return
+
+        target_sockets = connected_sockets.get(target_user.id, [])
+        if not target_sockets:
+            # Constraint 2: Rejection reasons strictly limited to: declined, busy, unavailable
+            await websocket.send_text(json.dumps({
+                "type": "call.reject",
+                "call_id": call_id,
+                "reason": "unavailable",
+            }))
+            return
+
+        if call_service.is_user_in_call(target_user.id):
+            # Constraint 2: Rejection reasons strictly limited to: declined, busy, unavailable
+            await websocket.send_text(json.dumps({
+                "type": "call.reject",
+                "call_id": call_id,
+                "reason": "busy",
+            }))
+            return
+
+        try:
+            call_service.create_call(
+                caller_id=user.id,
+                callee_id=target_user.id,
+                call_type=call_type,
+                call_id=call_id,
+                caller_username=user.username,
+                callee_username=target_user.username,
+            )
+        except ValueError as exc:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": str(exc),
+                "call_id": call_id,
+            }))
+            return
+
+        async def _on_timeout(expired_call: call_service.ActiveCall):
+            await deliver_to_user(expired_call.caller_id, {
+                "type": "call.reject",
+                "call_id": expired_call.call_id,
+                "reason": "unavailable",
+            })
+            await deliver_to_user(expired_call.callee_id, {
+                "type": "call.cancel",
+                "call_id": expired_call.call_id,
+            })
+
+        call_service.schedule_call_timeout(
+            call_id,
+            float(settings.CALL_TIMEOUT_SECONDS),
+            _on_timeout,
+        )
+
+        invite_payload = {
+            "type": "call.invite",
+            "call_id": call_id,
+            "from_user_id": user.id,
+            "from_username": user.username,
+            "to_user_id": target_user.id,
+            "call_type": call_type,
+        }
+        await deliver_to_user(target_user.id, invite_payload)
+        return
+
+    # For subsequent signaling, verify call exists and user is participant
+    call = call_service.get_call(call_id)
+    if not call:
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "message": "Call not found or already ended",
+            "call_id": call_id,
+        }))
+        return
+
+    if not call_service.is_user_participant(call, user.id):
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "message": "Not authorized for this call",
+            "call_id": call_id,
+        }))
+        return
+
+    # 2. ---------------- CALL ACCEPT ----------------
+    if msg_type == "call.accept":
+        if user.id != call.callee_id:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": "Not authorized to accept this call",
+                "call_id": call_id,
+            }))
+            return
+
+        call_service.cancel_call_timeout(call_id)
+        call_service.change_call_state(call_id, call_service.CallState.CONNECTING)
+        await deliver_to_user(call.caller_id, {
+            "type": "call.accept",
+            "call_id": call_id,
+        })
+        return
+
+    # 3. ---------------- CALL REJECT ----------------
+    elif msg_type == "call.reject":
+        raw_reason = data.get("reason", "declined")
+        reason = raw_reason if raw_reason in call_service.VALID_REJECTION_REASONS else "declined"
+
+        call_service.cancel_call_timeout(call_id)
+        call_service.end_call(call_id, call_service.CallState.DECLINED)
+
+        other_id = call_service.get_other_participant(call, user.id)
+        if other_id:
+            await deliver_to_user(other_id, {
+                "type": "call.reject",
+                "call_id": call_id,
+                "reason": reason,
+            })
+        return
+
+    # 4. ---------------- CALL CANCEL ----------------
+    elif msg_type == "call.cancel":
+        if user.id != call.caller_id:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": "Not authorized to cancel this call",
+                "call_id": call_id,
+            }))
+            return
+
+        call_service.cancel_call_timeout(call_id)
+        call_service.end_call(call_id, call_service.CallState.ENDED)
+
+        await deliver_to_user(call.callee_id, {
+            "type": "call.cancel",
+            "call_id": call_id,
+        })
+        return
+
+    # 5. ---------------- CALL END ----------------
+    elif msg_type == "call.end":
+        call_service.cancel_call_timeout(call_id)
+        call_service.end_call(call_id, call_service.CallState.ENDED)
+
+        other_id = call_service.get_other_participant(call, user.id)
+        if other_id:
+            await deliver_to_user(other_id, {
+                "type": "call.end",
+                "call_id": call_id,
+            })
+        return
+
+    # 6. ---------------- WEBRTC OFFER ----------------
+    elif msg_type == "webrtc.offer":
+        other_id = call_service.get_other_participant(call, user.id)
+        if other_id:
+            await deliver_to_user(other_id, {
+                "type": "webrtc.offer",
+                "call_id": call_id,
+                "sdp": data.get("sdp"),
+            })
+        return
+
+    # 7. ---------------- WEBRTC ANSWER ----------------
+    elif msg_type == "webrtc.answer":
+        other_id = call_service.get_other_participant(call, user.id)
+        if other_id:
+            await deliver_to_user(other_id, {
+                "type": "webrtc.answer",
+                "call_id": call_id,
+                "sdp": data.get("sdp"),
+            })
+        return
+
+    # 8. ---------------- WEBRTC ICE CANDIDATE ----------------
+    elif msg_type == "webrtc.ice_candidate":
+        other_id = call_service.get_other_participant(call, user.id)
+        if other_id:
+            await deliver_to_user(other_id, {
+                "type": "webrtc.ice_candidate",
+                "call_id": call_id,
+                "candidate": data.get("candidate"),
+            })
+        return
+
+    else:
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "message": f"Unsupported event type: {msg_type}",
+            "call_id": call_id,
+        }))
+        return
 
 
 def get_dm_room(user1, user2):
@@ -81,6 +383,9 @@ async def websocket_endpoint(websocket: WebSocket,
 
     # ✅ CLOCK IN: Mark as globally online
     online_users[user.id] = online_users.get(user.id, 0) + 1
+    if user.id not in connected_sockets:
+        connected_sockets[user.id] = []
+    connected_sockets[user.id].append(websocket)
     logger.info("%s connected (Online)", user.username)
 
     try:
@@ -109,6 +414,11 @@ async def websocket_endpoint(websocket: WebSocket,
             # (updates Last Seen timestamp without waiting for disconnect)
             user.last_seen = datetime.now(UTC)
             db.commit()
+
+            # ---------------- CALL & WEBRTC SIGNALING ----------------
+            if msg_type.startswith("call.") or msg_type.startswith("webrtc."):
+                await handle_call_message(websocket, user, db, data, msg_type)
+                continue
 
             # ---------------- TYPING SIGNAL (New) ----------------
             if msg_type == "typing":
@@ -539,6 +849,27 @@ async def websocket_endpoint(websocket: WebSocket,
         except Exception:
             pass
     finally:
+        # Remove from connected sockets registry
+        if user.id in connected_sockets:
+            if websocket in connected_sockets[user.id]:
+                connected_sockets[user.id].remove(websocket)
+            if not connected_sockets[user.id]:
+                connected_sockets.pop(user.id, None)
+
+        # Constraint 3: Disconnect cleanup must only terminate an active call when the user's FINAL connected WebSocket closes.
+        if user.id not in connected_sockets or not connected_sockets[user.id]:
+            ended_calls = call_service.cleanup_user_calls(user.id)
+            for ended_call in ended_calls:
+                other_id = call_service.get_other_participant(ended_call, user.id)
+                if other_id:
+                    try:
+                        await deliver_to_user(other_id, {
+                            "type": "call.end",
+                            "call_id": ended_call.call_id,
+                        })
+                    except Exception:
+                        pass
+
         # ✅ CLOCK OUT: Remove from global online list
         connection_count = online_users.get(user.id, 0)
         if connection_count <= 1:

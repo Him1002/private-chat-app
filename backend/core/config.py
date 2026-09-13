@@ -96,6 +96,11 @@ class Settings:
         BACKUP_DIR: Optional[str] = None,
         BACKUP_RETENTION_COUNT: Optional[Union[int, str]] = None,
         LOG_LEVEL: Optional[str] = None,
+        STUN_SERVER_URL: Optional[str] = None,
+        TURN_SERVER_URL: Optional[str] = None,
+        TURN_USERNAME: Optional[str] = None,
+        TURN_CREDENTIAL: Optional[str] = None,
+        CALL_TIMEOUT_SECONDS: Optional[Union[int, str]] = None,
     ):
         if _env_file is not None:
             if os.path.exists(_env_file):
@@ -196,6 +201,25 @@ class Settings:
         except (ValueError, TypeError):
             self.BACKUP_RETENTION_COUNT = 7
 
+        # WebRTC / Calling ICE configuration (V2 Calling Phase 1)
+        raw_stun = STUN_SERVER_URL if STUN_SERVER_URL is not None else os.getenv("STUN_SERVER_URL", "stun:stun.l.google.com:19302")
+        self.STUN_SERVER_URL: str = raw_stun.strip() if raw_stun else ""
+
+        raw_turn = TURN_SERVER_URL if TURN_SERVER_URL is not None else os.getenv("TURN_SERVER_URL", "")
+        self.TURN_SERVER_URL: str = raw_turn.strip() if raw_turn else ""
+
+        raw_turn_user = TURN_USERNAME if TURN_USERNAME is not None else os.getenv("TURN_USERNAME", "")
+        self.TURN_USERNAME: str = raw_turn_user.strip() if raw_turn_user else ""
+
+        raw_turn_cred = TURN_CREDENTIAL if TURN_CREDENTIAL is not None else os.getenv("TURN_CREDENTIAL", "")
+        self.TURN_CREDENTIAL: str = raw_turn_cred.strip() if raw_turn_cred else ""
+
+        raw_timeout = CALL_TIMEOUT_SECONDS if CALL_TIMEOUT_SECONDS is not None else os.getenv("CALL_TIMEOUT_SECONDS", "30")
+        try:
+            self.CALL_TIMEOUT_SECONDS: int = max(5, int(raw_timeout))
+        except (ValueError, TypeError):
+            self.CALL_TIMEOUT_SECONDS = 30
+
     @property
     def is_production(self) -> bool:
         """Return True if running in production mode."""
@@ -208,6 +232,36 @@ class Settings:
             ValueError: If DATABASE_URL is not a file-based SQLite database.
         """
         return resolve_sqlite_path(self.DATABASE_URL)
+
+    def get_stun_urls(self) -> List[str]:
+        """Return parsed list of STUN server URLs."""
+        if not self.STUN_SERVER_URL:
+            return []
+        return [u.strip() for u in self.STUN_SERVER_URL.split(",") if u.strip()]
+
+    def get_turn_urls(self) -> List[str]:
+        """Return parsed list of TURN server URLs."""
+        if not self.TURN_SERVER_URL:
+            return []
+        return [u.strip() for u in self.TURN_SERVER_URL.split(",") if u.strip()]
+
+    def get_ice_servers(self) -> List[dict]:
+        """Return ICE server configuration list for WebRTC client initialization.
+
+        Security note: In accordance with project security policies, TURN credentials
+        must never be exposed in API responses or logs.
+        """
+        servers: List[dict] = []
+        stun_urls = self.get_stun_urls()
+        if stun_urls:
+            servers.append({"urls": stun_urls})
+        turn_urls = self.get_turn_urls()
+        if turn_urls:
+            entry: dict = {"urls": turn_urls}
+            if self.TURN_USERNAME:
+                entry["username"] = self.TURN_USERNAME
+            servers.append(entry)
+        return servers
 
     def __repr__(self) -> str:
         return (
@@ -222,7 +276,12 @@ class Settings:
             f"ALLOWED_ORIGINS={self.ALLOWED_ORIGINS!r}, "
             f"LOG_LEVEL={self.LOG_LEVEL!r}, "
             f"BACKUP_DIR={self.BACKUP_DIR!r}, "
-            f"BACKUP_RETENTION_COUNT={self.BACKUP_RETENTION_COUNT!r})"
+            f"BACKUP_RETENTION_COUNT={self.BACKUP_RETENTION_COUNT!r}, "
+            f"STUN_SERVER_URL={self.STUN_SERVER_URL!r}, "
+            f"TURN_SERVER_URL={self.TURN_SERVER_URL!r}, "
+            f"TURN_USERNAME={self.TURN_USERNAME!r}, "
+            f"TURN_CREDENTIAL='***', "
+            f"CALL_TIMEOUT_SECONDS={self.CALL_TIMEOUT_SECONDS!r})"
         )
 
     def __str__(self) -> str:

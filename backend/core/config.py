@@ -6,6 +6,7 @@ security settings, JWT configuration, file upload paths, and environment setting
 """
 import json
 import os
+from pathlib import Path
 from typing import List, Optional, Set, Union
 from dotenv import load_dotenv
 
@@ -41,6 +42,38 @@ def parse_allowed_origins(val: Union[str, List[str], None], env: str = "developm
     return [origin.strip() for origin in val.split(",") if origin.strip()]
 
 
+def resolve_sqlite_path(db_url: str) -> Path:
+    """Extract and resolve filesystem path from an SQLite database URL or path string.
+
+    Supports formats:
+    - sqlite:///./chat.db
+    - sqlite:///chat.db
+    - sqlite:////absolute/path/to/chat.db
+    - sqlite:///C:/path/to/chat.db
+    - relative or absolute path strings directly (e.g. "./chat.db")
+
+    Raises:
+        ValueError: If db_url is empty, in-memory, or not a supported SQLite URL.
+    """
+    if not db_url or not db_url.strip():
+        raise ValueError("Database URL or path cannot be empty.")
+
+    url = db_url.strip()
+    if url in (":memory:", "sqlite:///:memory:", "sqlite:///:memory:?cache=shared"):
+        raise ValueError("Cannot resolve filesystem path for an in-memory SQLite database.")
+
+    if url.startswith("sqlite:///"):
+        raw_path = url[len("sqlite:///"):]
+    elif url.startswith("sqlite://"):
+        raw_path = url[len("sqlite://"):]
+    elif "://" in url:
+        raise ValueError(f"Unsupported database scheme in URL: {url!r}. Only SQLite is supported.")
+    else:
+        raw_path = url
+
+    return Path(raw_path).resolve()
+
+
 class Settings:
     """Application settings container."""
 
@@ -55,6 +88,8 @@ class Settings:
         UPLOADS_DIR: Optional[str] = None,
         STATIC_DIR: Optional[str] = None,
         ALLOWED_ORIGINS: Optional[Union[str, List[str]]] = None,
+        BACKUP_DIR: Optional[str] = None,
+        BACKUP_RETENTION_COUNT: Optional[Union[int, str]] = None,
     ):
         if _env_file is not None:
             if os.path.exists(_env_file):
@@ -98,10 +133,30 @@ class Settings:
         origins_val = ALLOWED_ORIGINS if ALLOWED_ORIGINS is not None else os.getenv("ALLOWED_ORIGINS")
         self.ALLOWED_ORIGINS: List[str] = parse_allowed_origins(origins_val, env=self.ENVIRONMENT)
 
+        # Backup & Recovery configuration (S5-T08)
+        self.BACKUP_DIR: str = BACKUP_DIR or os.getenv("BACKUP_DIR", "backups")
+        retention_val = (
+            BACKUP_RETENTION_COUNT
+            if BACKUP_RETENTION_COUNT is not None
+            else os.getenv("BACKUP_RETENTION_COUNT", "7")
+        )
+        try:
+            self.BACKUP_RETENTION_COUNT: int = max(1, int(retention_val))
+        except (ValueError, TypeError):
+            self.BACKUP_RETENTION_COUNT = 7
+
     @property
     def is_production(self) -> bool:
         """Return True if running in production mode."""
         return self.ENVIRONMENT == "production"
+
+    def get_sqlite_db_path(self) -> Path:
+        """Resolve the SQLite database filesystem path from DATABASE_URL.
+
+        Raises:
+            ValueError: If DATABASE_URL is not a file-based SQLite database.
+        """
+        return resolve_sqlite_path(self.DATABASE_URL)
 
     def __repr__(self) -> str:
         return (
@@ -113,7 +168,9 @@ class Settings:
             f"DATABASE_URL={self.DATABASE_URL!r}, "
             f"UPLOADS_DIR={self.UPLOADS_DIR!r}, "
             f"STATIC_DIR={self.STATIC_DIR!r}, "
-            f"ALLOWED_ORIGINS={self.ALLOWED_ORIGINS!r})"
+            f"ALLOWED_ORIGINS={self.ALLOWED_ORIGINS!r}, "
+            f"BACKUP_DIR={self.BACKUP_DIR!r}, "
+            f"BACKUP_RETENTION_COUNT={self.BACKUP_RETENTION_COUNT!r})"
         )
 
     def __str__(self) -> str:

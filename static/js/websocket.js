@@ -133,6 +133,9 @@ function handleSocketMessage(e) {
         }
     } else if (data.type === "error") {
         showToast(data.message || "Chat error", "error");
+        if (data.call_id && typeof WebRTCManager !== "undefined" && typeof WebRTCManager.cleanupWebRTCCall === "function") {
+            WebRTCManager.cleanupWebRTCCall();
+        }
     }
 }
 

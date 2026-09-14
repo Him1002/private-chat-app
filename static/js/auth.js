@@ -52,6 +52,9 @@ function logout() {
     if (typeof cleanupWebRTCCall === "function") {
         cleanupWebRTCCall();
     }
+    if (typeof CallUI !== "undefined" && typeof CallUI.cleanup === "function") {
+        CallUI.cleanup();
+    }
     disconnectWebSocket();
     stopPresenceRefresh();
 

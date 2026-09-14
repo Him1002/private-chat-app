@@ -287,6 +287,9 @@ function startChat(friend, element) {
     if (element) element.classList.add("active");
 
     document.getElementById("chat-title").innerText = friend.display_name || friend.username;
+    if (typeof CallUI !== "undefined" && typeof CallUI.onChatSelected === "function") {
+        CallUI.onChatSelected(friend);
+    }
     const statusEl = document.getElementById("chat-status");
 
     // ✓ Using the exact 'is_online' property from your database/server

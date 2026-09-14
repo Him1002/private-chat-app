@@ -29,13 +29,18 @@
         callState: 'idle', // 'idle' | 'calling' | 'connecting' | 'connected' | 'reconnecting' | 'failed' | 'ended'
         pendingIceCandidates: [],
         lastError: null,
+        peerUsername: null,
+        endReason: null,
         listeners: {
             stateChange: [],
             localStream: [],
             remoteStream: [],
             error: [],
             voiceFallbackAvailable: [],
-            callInvite: []
+            callInvite: [],
+            callReject: [],
+            callCancel: [],
+            callEnd: []
         }
     };
 
@@ -655,6 +660,7 @@
         CallWebRTCState.callId = null;
         CallWebRTCState.callType = 'voice';
         CallWebRTCState.isCaller = false;
+        CallWebRTCState.peerUsername = null;
         CallWebRTCState.pendingIceCandidates = [];
         CallWebRTCState.lastError = null;
 
@@ -672,18 +678,46 @@
     }
 
     function handleCallReject(callId, reason) {
+        CallWebRTCState.endReason = reason || 'declined';
+        CallWebRTCState.listeners.callReject.forEach(function (fn) {
+            try {
+                fn(callId, CallWebRTCState.endReason);
+            } catch (err) {
+                console.error('[WebRTC] callReject listener error:', err);
+            }
+        });
         cleanupWebRTCCall();
     }
 
     function handleCallCancel(callId) {
+        CallWebRTCState.listeners.callCancel.forEach(function (fn) {
+            try {
+                fn(callId);
+            } catch (err) {
+                console.error('[WebRTC] callCancel listener error:', err);
+            }
+        });
         cleanupWebRTCCall();
     }
 
     function handleCallEnd(callId) {
+        CallWebRTCState.listeners.callEnd.forEach(function (fn) {
+            try {
+                fn(callId);
+            } catch (err) {
+                console.error('[WebRTC] callEnd listener error:', err);
+            }
+        });
         cleanupWebRTCCall();
     }
 
     function handleCallInvite(inviteData) {
+        if (inviteData) {
+            CallWebRTCState.peerUsername = inviteData.from_username;
+            if (inviteData.call_id) {
+                setCallContext(inviteData.call_id, inviteData.call_type || 'voice', false);
+            }
+        }
         CallWebRTCState.listeners.callInvite.forEach(function (fn) {
             try {
                 fn(inviteData);
@@ -691,6 +725,234 @@
                 console.error('[WebRTC] callInvite listener error:', err);
             }
         });
+    }
+
+    /**
+     * Start an outgoing call to the specified user.
+     */
+    async function initiateCall(toUsername, callType) {
+        if (!isWebRTCSupported()) {
+            const err = {
+                code: 'UNSUPPORTED_BROWSER',
+                message: 'Voice and video calling is not supported in this browser.'
+            };
+            notifyCallError(err);
+            throw err;
+        }
+
+        if (CallWebRTCState.callState !== 'idle' && CallWebRTCState.callState !== 'ended' && CallWebRTCState.callState !== 'failed') {
+            const err = {
+                code: 'CALL_ALREADY_ACTIVE',
+                message: 'A call is already active.'
+            };
+            notifyCallError(err);
+            throw err;
+        }
+
+        const callId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+            ? crypto.randomUUID()
+            : ('call-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9));
+
+        const effectiveType = callType === 'video' ? 'video' : 'voice';
+        setCallContext(callId, effectiveType, true);
+        CallWebRTCState.peerUsername = toUsername;
+        CallWebRTCState.endReason = null;
+
+        try {
+            await acquireLocalMedia(effectiveType);
+        } catch (err) {
+            cleanupWebRTCCall();
+            throw err;
+        }
+
+        setCallLifecycleState('calling');
+
+        if (typeof sendSocketPayload === 'function') {
+            sendSocketPayload({
+                type: 'call.invite',
+                call_id: callId,
+                call_type: effectiveType,
+                to_username: toUsername
+            });
+        }
+
+        return callId;
+    }
+
+    /**
+     * Accept an incoming call.
+     */
+    async function acceptCall(callId) {
+        const effectiveCallId = callId || CallWebRTCState.callId;
+        if (!effectiveCallId) {
+            console.warn('[WebRTC] acceptCall called without callId');
+            return;
+        }
+
+        setCallContext(effectiveCallId, CallWebRTCState.callType, false);
+        setCallLifecycleState('connecting');
+
+        try {
+            await acquireLocalMedia(CallWebRTCState.callType);
+        } catch (err) {
+            cleanupWebRTCCall();
+            throw err;
+        }
+
+        if (typeof sendSocketPayload === 'function') {
+            sendSocketPayload({
+                type: 'call.accept',
+                call_id: effectiveCallId
+            });
+        }
+    }
+
+    /**
+     * Reject an incoming call.
+     */
+    function rejectCall(callId, reason) {
+        const effectiveCallId = callId || CallWebRTCState.callId;
+        const validReasons = ['declined', 'busy', 'unavailable'];
+        const effectiveReason = validReasons.indexOf(reason) !== -1 ? reason : 'declined';
+
+        if (effectiveCallId && typeof sendSocketPayload === 'function') {
+            sendSocketPayload({
+                type: 'call.reject',
+                call_id: effectiveCallId,
+                reason: effectiveReason
+            });
+        }
+
+        cleanupWebRTCCall();
+    }
+
+    /**
+     * Cancel an outgoing call.
+     */
+    function cancelCall() {
+        if (CallWebRTCState.callId && typeof sendSocketPayload === 'function') {
+            sendSocketPayload({
+                type: 'call.cancel',
+                call_id: CallWebRTCState.callId
+            });
+        }
+
+        cleanupWebRTCCall();
+    }
+
+    /**
+     * End an active call.
+     */
+    function endCall() {
+        if (CallWebRTCState.callId && typeof sendSocketPayload === 'function') {
+            sendSocketPayload({
+                type: 'call.end',
+                call_id: CallWebRTCState.callId
+            });
+        }
+
+        cleanupWebRTCCall();
+    }
+
+    /**
+     * Toggle local audio track (mute/unmute).
+     */
+    function toggleAudio(enabled) {
+        if (!CallWebRTCState.localStream) return false;
+        const tracks = CallWebRTCState.localStream.getAudioTracks();
+        if (tracks.length === 0) return false;
+        const newState = typeof enabled === 'boolean' ? enabled : !tracks[0].enabled;
+        tracks.forEach(function (t) { t.enabled = newState; });
+        return newState;
+    }
+
+    /**
+     * Toggle local video track (camera on/off).
+     */
+    function toggleVideo(enabled) {
+        if (!CallWebRTCState.localStream) return false;
+        const tracks = CallWebRTCState.localStream.getVideoTracks();
+        if (tracks.length === 0) return false;
+        const newState = typeof enabled === 'boolean' ? enabled : !tracks[0].enabled;
+        tracks.forEach(function (t) { t.enabled = newState; });
+        return newState;
+    }
+
+    /**
+     * Check if local audio track is currently enabled.
+     */
+    function isAudioEnabled() {
+        if (!CallWebRTCState.localStream) return false;
+        const tracks = CallWebRTCState.localStream.getAudioTracks();
+        return tracks.length > 0 && tracks[0].enabled;
+    }
+
+    /**
+     * Check if local video track is currently enabled.
+     */
+    function isVideoEnabled() {
+        if (!CallWebRTCState.localStream) return false;
+        const tracks = CallWebRTCState.localStream.getVideoTracks();
+        return tracks.length > 0 && tracks[0].enabled;
+    }
+
+    /**
+     * Switch camera device / facing mode for video calls.
+     */
+    async function switchCamera() {
+        if (!CallWebRTCState.localStream || CallWebRTCState.callType !== 'video') return false;
+        const currentTracks = CallWebRTCState.localStream.getVideoTracks();
+        if (currentTracks.length === 0) return false;
+
+        try {
+            const currentTrack = currentTracks[0];
+            const settings = currentTrack.getSettings ? currentTrack.getSettings() : {};
+            const nextFacing = (settings.facingMode === 'environment') ? 'user' : 'environment';
+
+            const newStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: { ideal: nextFacing } },
+                audio: false
+            });
+
+            const newVideoTrack = newStream.getVideoTracks()[0];
+            if (!newVideoTrack) return false;
+
+            if (CallWebRTCState.peerConnection) {
+                const senders = CallWebRTCState.peerConnection.getSenders();
+                senders.forEach(function (sender) {
+                    if (sender.track && sender.track.kind === 'video') {
+                        sender.replaceTrack(newVideoTrack);
+                    }
+                });
+            }
+
+            currentTrack.stop();
+            CallWebRTCState.localStream.removeTrack(currentTrack);
+            CallWebRTCState.localStream.addTrack(newVideoTrack);
+
+            notifyLocalStream(CallWebRTCState.localStream);
+            return true;
+        } catch (err) {
+            console.warn('[WebRTC] switchCamera failed:', err);
+            return false;
+        }
+    }
+
+    /**
+     * Fallback from video call to voice call.
+     */
+    async function fallbackToVoice() {
+        CallWebRTCState.callType = 'voice';
+        if (CallWebRTCState.localStream) {
+            CallWebRTCState.localStream.getVideoTracks().forEach(function (t) { t.stop(); });
+        }
+        try {
+            const stream = await acquireLocalMedia('voice');
+            return stream;
+        } catch (err) {
+            cleanupWebRTCCall();
+            throw err;
+        }
     }
 
     /**
@@ -741,6 +1003,24 @@
         }
     }
 
+    function onCallReject(callback) {
+        if (typeof callback === 'function') {
+            CallWebRTCState.listeners.callReject.push(callback);
+        }
+    }
+
+    function onCallCancel(callback) {
+        if (typeof callback === 'function') {
+            CallWebRTCState.listeners.callCancel.push(callback);
+        }
+    }
+
+    function onCallEnd(callback) {
+        if (typeof callback === 'function') {
+            CallWebRTCState.listeners.callEnd.push(callback);
+        }
+    }
+
     // Constraint 1: Page unload cleanup releases only local browser/media resources.
     // Server-side WebSocket disconnect handles call termination authoritative cleanup.
     if (typeof window !== 'undefined') {
@@ -758,6 +1038,17 @@
         fetchIceServers: fetchIceServers,
         acquireLocalMedia: acquireLocalMedia,
         startCallerFlow: startCallerFlow,
+        initiateCall: initiateCall,
+        acceptCall: acceptCall,
+        rejectCall: rejectCall,
+        cancelCall: cancelCall,
+        endCall: endCall,
+        toggleAudio: toggleAudio,
+        toggleVideo: toggleVideo,
+        isAudioEnabled: isAudioEnabled,
+        isVideoEnabled: isVideoEnabled,
+        switchCamera: switchCamera,
+        fallbackToVoice: fallbackToVoice,
         handleWebRTCOffer: handleWebRTCOffer,
         handleWebRTCAnswer: handleWebRTCAnswer,
         handleWebRTCICECandidate: handleWebRTCICECandidate,
@@ -771,12 +1062,16 @@
         setCallContext: setCallContext,
         getLocalStream: function () { return CallWebRTCState.localStream; },
         getRemoteStream: function () { return CallWebRTCState.remoteStream; },
+        getPeerUsername: function () { return CallWebRTCState.peerUsername; },
+        getEndReason: function () { return CallWebRTCState.endReason; },
         getWebRTCState: function () {
             return {
                 callId: CallWebRTCState.callId,
                 callType: CallWebRTCState.callType,
                 isCaller: CallWebRTCState.isCaller,
                 callState: CallWebRTCState.callState,
+                peerUsername: CallWebRTCState.peerUsername,
+                endReason: CallWebRTCState.endReason,
                 lastError: CallWebRTCState.lastError
             };
         },
@@ -785,7 +1080,10 @@
         onRemoteStream: onRemoteStream,
         onCallError: onCallError,
         onVoiceFallbackAvailable: onVoiceFallbackAvailable,
-        onCallInvite: onCallInvite
+        onCallInvite: onCallInvite,
+        onCallReject: onCallReject,
+        onCallCancel: onCallCancel,
+        onCallEnd: onCallEnd
     };
 
     // Expose to window for application-wide access

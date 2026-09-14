@@ -52,6 +52,8 @@ async function loadSidebar() {
         f.last_message_time = conv ? conv.last_message_time : null;
     });
 
+    window.cachedFriends = friends;
+
     const selectedFriend = friends.find(f => f.username === currentFriend);
     if (selectedFriend) updateChatStatus(selectedFriend);
 

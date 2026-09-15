@@ -42,7 +42,14 @@ def _build_reply_to_info(message: Message, current_user: User, friend: User) -> 
 
     parent_deleted = bool(parent.is_deleted)
     parent_sender = current_user.username if parent.sender_id == current_user.id else friend.username
-    parent_content = "This message was deleted" if parent_deleted else (parent.content or "")
+    if parent_deleted:
+        parent_content = "This message was deleted"
+    elif parent.content:
+        parent_content = parent.content
+    elif parent.image_url:
+        parent_content = "📷 Photo"
+    else:
+        parent_content = ""
 
     parent_sender_display_name = current_user.display_name if parent.sender_id == current_user.id else friend.display_name
     return {
@@ -218,7 +225,12 @@ def list_conversations(db: Session, current_user: User) -> List[Dict]:
 
         last_message_text = None
         if last_message is not None:
-            last_message_text = "This message was deleted" if last_message.is_deleted else last_message.content
+            if last_message.is_deleted:
+                last_message_text = "This message was deleted"
+            elif last_message.content:
+                last_message_text = last_message.content
+            elif last_message.image_url:
+                last_message_text = "📷 Photo"
 
         unread_count = get_unread_count(db, current_user.id, friend.id)
 
@@ -244,9 +256,23 @@ def get_chat_history(db: Session, current_user: User, friend_username: str) -> L
     ]
 
 
-def send_message(db: Session, current_user: User, friend_username: str, text: Optional[str], image_url: Optional[str]) -> Dict:
+def send_message(
+    db: Session,
+    current_user: User,
+    friend_username: str,
+    text: Optional[str],
+    image_url: Optional[str],
+    reply_to_message_id: Optional[int] = None,
+) -> Dict:
     friend = get_chat_friend(db, current_user, friend_username)
-    message = create_message(db, current_user, friend, text, image_url)
+    message = create_message(
+        db,
+        current_user,
+        friend,
+        text,
+        image_url,
+        reply_to_message_id=reply_to_message_id,
+    )
 
     return _message_to_dict(message, current_user, friend)
 

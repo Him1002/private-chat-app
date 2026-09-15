@@ -147,13 +147,21 @@ async function handleSearch(e) {
         const sanitizedPic = sanitizeMediaUrl(item.profile_picture);
         if (sanitizedPic) {
             const img = document.createElement("img");
-            img.src = sanitizedPic;
             img.alt = "";
             img.style.width = "100%";
             img.style.height = "100%";
             img.style.objectFit = "cover";
             img.style.borderRadius = "50%";
             avatarDiv.appendChild(img);
+            if (sanitizedPic.startsWith("http://") || sanitizedPic.startsWith("https://") || sanitizedPic.startsWith("blob:") || sanitizedPic.startsWith("data:")) {
+                img.src = sanitizedPic;
+            } else if (typeof fetchSecureMediaBlobUrl === "function") {
+                fetchSecureMediaBlobUrl(sanitizedPic).then(blobUrl => {
+                    if (blobUrl) img.src = blobUrl;
+                });
+            } else {
+                img.src = sanitizedPic;
+            }
         } else {
             const initial = (item.username && item.username.length > 0) ? item.username[0].toUpperCase() : "?";
             avatarDiv.textContent = initial;
@@ -218,7 +226,7 @@ function renderFriendItem(container, f) {
     if (currentTab === 'chats' && currentFriend === f.username) div.classList.add("active");
 
     const fallbackAvatar = `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(f.username || "")}&backgroundColor=b6e3f4,c0aede,d1d4f9`;
-    const avatarUrl = sanitizeMediaUrl(f.profile_picture) || fallbackAvatar;
+    const rawPic = sanitizeMediaUrl(f.profile_picture);
     const displayName = f.display_name || f.username || "";
     
     // Use Backend "is_online" truth
@@ -229,13 +237,25 @@ function renderFriendItem(container, f) {
     const avatarDiv = document.createElement("div");
     avatarDiv.className = "avatar";
     const img = document.createElement("img");
-    img.src = avatarUrl;
     img.alt = "";
     img.style.width = "100%";
     img.style.height = "100%";
     img.style.objectFit = "cover";
     img.style.borderRadius = "50%";
     avatarDiv.appendChild(img);
+
+    if (!rawPic) {
+        img.src = fallbackAvatar;
+    } else if (rawPic.startsWith("http://") || rawPic.startsWith("https://") || rawPic.startsWith("blob:") || rawPic.startsWith("data:")) {
+        img.src = rawPic;
+    } else if (typeof fetchSecureMediaBlobUrl === "function") {
+        img.src = fallbackAvatar;
+        fetchSecureMediaBlobUrl(rawPic).then(blobUrl => {
+            if (blobUrl) img.src = blobUrl;
+        });
+    } else {
+        img.src = rawPic;
+    }
 
     const infoDiv = document.createElement("div");
     infoDiv.className = "info";

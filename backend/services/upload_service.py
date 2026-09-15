@@ -17,7 +17,7 @@ from fastapi import UploadFile, HTTPException, status
 
 from backend.core.config import settings
 
-MAX_UPLOAD_SIZE = 5 * 1024 * 1024  # 5 MB limit for V1 one-to-one messenger
+MAX_UPLOAD_SIZE = getattr(settings, "MAX_IMAGE_SIZE_BYTES", 10 * 1024 * 1024)
 
 # Allowed magic bytes and their corresponding extensions
 ALLOWED_MAGIC_BYTES = {
@@ -120,7 +120,7 @@ def save_upload(file: UploadFile) -> str:
                 except OSError:
                     pass
                 raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    status_code=getattr(status, "HTTP_413_CONTENT_TOO_LARGE", 413),
                     detail="File too large"
                 )
             buffer.write(chunk)

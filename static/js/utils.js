@@ -89,6 +89,83 @@ function sanitizeMediaUrl(url) {
 
 function handleEnter(e) { if (e.key === "Enter") send(); }
 
+const secureMediaCache = new Map();
+const pendingMediaRequests = new Map();
+
+function formatFileSize(bytes) {
+    if (!bytes || bytes <= 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
+function seedSecureMediaCache(url, objectUrl) {
+    if (url && objectUrl) {
+        secureMediaCache.set(url, objectUrl);
+    }
+}
+
+function revokeSecureMediaCache() {
+    for (const objectUrl of secureMediaCache.values()) {
+        if (objectUrl && typeof objectUrl === "string" && objectUrl.startsWith("blob:")) {
+            try {
+                URL.revokeObjectURL(objectUrl);
+            } catch (_) {}
+        }
+    }
+    secureMediaCache.clear();
+    pendingMediaRequests.clear();
+}
+
+async function fetchSecureMediaBlobUrl(url) {
+    const validated = sanitizeMediaUrl(url);
+    if (!validated) return null;
+
+    // External URLs (e.g. DiceBear), data:, or blob: URLs pass through directly
+    if (
+        validated.startsWith("http://") ||
+        validated.startsWith("https://") ||
+        validated.startsWith("blob:") ||
+        validated.startsWith("data:")
+    ) {
+        return validated;
+    }
+
+    if (secureMediaCache.has(validated)) {
+        return secureMediaCache.get(validated);
+    }
+
+    if (pendingMediaRequests.has(validated)) {
+        return pendingMediaRequests.get(validated);
+    }
+
+    const fetchPromise = (async () => {
+        try {
+            const authToken = (typeof token !== "undefined" && token) ? token : (typeof AppState !== "undefined" && AppState.token ? AppState.token : "");
+            const headers = {};
+            if (authToken) {
+                headers["Authorization"] = `Bearer ${authToken}`;
+            }
+            const res = await fetch(validated, { headers });
+            if (!res.ok) {
+                return null;
+            }
+            const blob = await res.blob();
+            const objectUrl = URL.createObjectURL(blob);
+            secureMediaCache.set(validated, objectUrl);
+            return objectUrl;
+        } catch (_) {
+            return null;
+        } finally {
+            pendingMediaRequests.delete(validated);
+        }
+    })();
+
+    pendingMediaRequests.set(validated, fetchPromise);
+    return fetchPromise;
+}
+
 if (typeof module !== "undefined" && module.exports) {
     module.exports = {
         escapeHtml,
@@ -96,6 +173,11 @@ if (typeof module !== "undefined" && module.exports) {
         formatMessageTimestamp,
         formatLastSeen,
         showToast,
-        handleEnter
+        handleEnter,
+        formatFileSize,
+        seedSecureMediaCache,
+        revokeSecureMediaCache,
+        fetchSecureMediaBlobUrl
     };
 }
+

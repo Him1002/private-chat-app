@@ -536,7 +536,7 @@ function enterReplyMode(messageEl) {
     const isDeleted = isMessageDeleted(messageEl);
     const senderName = messageEl.querySelector(".sender-name");
     const sender = messageEl.classList.contains("me") ? "You" : (senderName ? senderName.textContent : "");
-    const content = isDeleted ? "This message was deleted" : (messageEl.dataset.text || "");
+    const content = isDeleted ? "This message was deleted" : (messageEl.dataset.text || (messageEl.dataset.imageUrl ? "📷 Photo" : ""));
 
     activeReplyTarget = {
         messageId,
@@ -823,7 +823,7 @@ function buildReplyPreviewElement(replyTo) {
     const rawSender = replyTo.sender || "Unknown";
     const displayName = replyTo.sender_display_name || rawSender;
     const sender = rawSender === currentUser ? "You" : displayName;
-    const content = replyTo.content || "";
+    const content = replyTo.content || "📷 Photo";
     const replyId = replyTo.id ? String(replyTo.id) : "";
 
     const previewDiv = document.createElement("div");
@@ -843,6 +843,40 @@ function buildReplyPreviewElement(replyTo) {
     previewDiv.appendChild(senderSpan);
     previewDiv.appendChild(contentSpan);
     return previewDiv;
+}
+
+function openImageLightbox(src) {
+    if (!src) return;
+    const modal = document.getElementById("image-lightbox-modal");
+    const img = document.getElementById("lightbox-img");
+    if (!modal || !img) return;
+
+    img.src = src;
+    modal.style.display = "flex";
+
+    window.addEventListener("keydown", handleLightboxKeyDown);
+}
+
+function closeImageLightbox() {
+    const modal = document.getElementById("image-lightbox-modal");
+    const img = document.getElementById("lightbox-img");
+    if (!modal) return;
+
+    modal.style.display = "none";
+    if (img) img.src = "";
+    window.removeEventListener("keydown", handleLightboxKeyDown);
+}
+
+function handleLightboxBackdropClick(event) {
+    if (event && event.target && event.target.id === "image-lightbox-modal") {
+        closeImageLightbox();
+    }
+}
+
+function handleLightboxKeyDown(event) {
+    if (event && event.key === "Escape") {
+        closeImageLightbox();
+    }
 }
 
 function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "", reactions = null, replyTo = null) {
@@ -889,16 +923,35 @@ function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messag
         }
     }
 
-    // 3. Media image
+    // 3. Media image with secure authenticated loading
     const validatedImageUrl = sanitizeMediaUrl(safeImageUrl);
     if (!deleted && validatedImageUrl) {
         const imgEl = document.createElement("img");
-        imgEl.src = validatedImageUrl;
         imgEl.alt = "message image";
-        imgEl.addEventListener("click", () => {
-            window.open(imgEl.src);
-        });
+        imgEl.className = "msg-image loading";
         div.appendChild(imgEl);
+
+        if (typeof fetchSecureMediaBlobUrl === "function") {
+            fetchSecureMediaBlobUrl(validatedImageUrl).then((blobUrl) => {
+                if (blobUrl) {
+                    imgEl.src = blobUrl;
+                    imgEl.classList.remove("loading");
+                } else {
+                    imgEl.remove();
+                }
+            }).catch(() => {
+                imgEl.remove();
+            });
+        } else {
+            imgEl.src = validatedImageUrl;
+        }
+
+        imgEl.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (imgEl.src) {
+                openImageLightbox(imgEl.src);
+            }
+        });
     }
 
     // 4. Message text

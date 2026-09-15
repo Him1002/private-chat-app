@@ -57,6 +57,9 @@ function logout() {
     }
     disconnectWebSocket();
     stopPresenceRefresh();
+    if (typeof revokeSecureMediaCache === "function") {
+        revokeSecureMediaCache();
+    }
 
     // 2. Destroy Session Data
     token = null;

@@ -814,5 +814,210 @@ class TestProfileAndChatIntegration(UploadSecurityTestCase):
         self.assertNotIn("url", bad_resp.json())
 
 
+# ==============================================================================
+# 10. Phase R1 Media Authorization & Previews
+# ==============================================================================
+class TestMediaAuthorizationAndPreviews(UploadSecurityTestCase):
+    """Tests covering Phase R1 private media authorization, lifecycle, and preview formatting."""
+
+    def test_authenticated_participants_can_access_chat_image(self):
+        """Sender and receiver can access uploaded chat image; unauthenticated and third-party users cannot."""
+        # 1. Alice uploads valid PNG
+        up_resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="private_snap.png",
+            file_bytes=PNG_FIXTURE,
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(up_resp.status_code, 200)
+        img_url = up_resp.json()["url"]
+        self.track_file(img_url)
+
+        # 2. Alice sends chat message containing image_url to Bob
+        msg_resp = self.client.post(
+            "/messages/bob",
+            json={"text": "For your eyes only", "image_url": img_url},
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(msg_resp.status_code, 200)
+
+        # 3. Alice (sender) can access image
+        alice_get = self.client.get(img_url, headers=self.auth_headers("alice"))
+        self.assertEqual(alice_get.status_code, 200)
+        self.assertEqual(alice_get.content, PNG_FIXTURE)
+        self.assertEqual(alice_get.headers.get("content-type"), "image/png")
+
+        # 4. Bob (receiver) can access image
+        bob_get = self.client.get(img_url, headers=self.auth_headers("bob"))
+        self.assertEqual(bob_get.status_code, 200)
+        self.assertEqual(bob_get.content, PNG_FIXTURE)
+
+    def test_unauthenticated_access_rejected(self):
+        """Unauthenticated requests to /uploads/{filename} return 401."""
+        up_resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="private.png",
+            file_bytes=PNG_FIXTURE,
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(up_resp.status_code, 200)
+        img_url = up_resp.json()["url"]
+        self.track_file(img_url)
+
+        # No auth header -> 401
+        anon_get = self.client.get(img_url)
+        self.assertEqual(anon_get.status_code, 401)
+
+    def test_third_party_user_rejected_with_403(self):
+        """Third party user who is neither sender nor receiver receives 403."""
+        # Alice sends to Bob
+        up_resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="alice_bob_only.png",
+            file_bytes=PNG_FIXTURE,
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(up_resp.status_code, 200)
+        img_url = up_resp.json()["url"]
+        self.track_file(img_url)
+
+        msg_resp = self.client.post(
+            "/messages/bob",
+            json={"text": "Secret message", "image_url": img_url},
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(msg_resp.status_code, 200)
+
+        # Charlie tries to access -> 403
+        charlie_get = self.client.get(img_url, headers=self.auth_headers("charlie"))
+        self.assertEqual(charlie_get.status_code, 403)
+        self.assertIn("Not authorized", charlie_get.json().get("detail", ""))
+
+    def test_deleted_image_returns_404(self):
+        """Soft-deleted message media immediately returns 404 to all users."""
+        up_resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="soon_deleted.png",
+            file_bytes=PNG_FIXTURE,
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(up_resp.status_code, 200)
+        img_url = up_resp.json()["url"]
+        self.track_file(img_url)
+
+        msg_resp = self.client.post(
+            "/messages/bob",
+            json={"text": "Ephemeral photo", "image_url": img_url},
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(msg_resp.status_code, 200)
+        msg_id = msg_resp.json()["id"]
+
+        # Before deletion: accessible
+        self.assertEqual(self.client.get(img_url, headers=self.auth_headers("alice")).status_code, 200)
+
+        # Delete message
+        del_resp = self.client.delete(f"/messages/{msg_id}", headers=self.auth_headers("alice"))
+        self.assertEqual(del_resp.status_code, 200)
+
+        # After deletion: immediately 404 for both participants
+        self.assertEqual(self.client.get(img_url, headers=self.auth_headers("alice")).status_code, 404)
+        self.assertEqual(self.client.get(img_url, headers=self.auth_headers("bob")).status_code, 404)
+
+    def test_unlinked_media_returns_404(self):
+        """Uploaded media not linked to any active message or profile returns 404."""
+        up_resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="orphan.png",
+            file_bytes=PNG_FIXTURE,
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(up_resp.status_code, 200)
+        img_url = up_resp.json()["url"]
+        self.track_file(img_url)
+
+        # Alice herself gets 404 because file is not linked to any message or profile
+        get_resp = self.client.get(img_url, headers=self.auth_headers("alice"))
+        self.assertEqual(get_resp.status_code, 404)
+
+    def test_authenticated_profile_picture_access_works(self):
+        """Any authenticated user can view an uploaded profile picture; unauthenticated cannot."""
+        up_resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="avatar.png",
+            file_bytes=PNG_FIXTURE,
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(up_resp.status_code, 200)
+        pic_url = up_resp.json()["url"]
+        self.track_file(pic_url)
+
+        set_resp = self.client.put(
+            "/profile/picture",
+            json={"profile_picture": pic_url},
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(set_resp.status_code, 200)
+
+        # Alice can access
+        self.assertEqual(self.client.get(pic_url, headers=self.auth_headers("alice")).status_code, 200)
+
+        # Bob (friend/other authenticated user) can access
+        self.assertEqual(self.client.get(pic_url, headers=self.auth_headers("bob")).status_code, 200)
+
+        # Charlie (any authenticated user) can access
+        self.assertEqual(self.client.get(pic_url, headers=self.auth_headers("charlie")).status_code, 200)
+
+        # Unauthenticated cannot access
+        self.assertEqual(self.client.get(pic_url).status_code, 401)
+
+    def test_image_only_reply_and_conversation_preview_serialization(self):
+        """Image-only message serializes as '📷 Photo' in replies and conversation list."""
+        up_resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="photo_only.png",
+            file_bytes=PNG_FIXTURE,
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(up_resp.status_code, 200)
+        img_url = up_resp.json()["url"]
+        self.track_file(img_url)
+
+        # Alice sends image-only message (empty text)
+        msg_resp = self.client.post(
+            "/messages/bob",
+            json={"text": "", "image_url": img_url},
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(msg_resp.status_code, 200)
+        img_msg_id = msg_resp.json()["id"]
+
+        # 1. Bob checks conversations list -> last_message should be "📷 Photo"
+        conv_resp = self.client.get("/conversations", headers=self.auth_headers("bob"))
+        self.assertEqual(conv_resp.status_code, 200)
+        convs = conv_resp.json()
+        alice_conv = next((c for c in convs if c["username"] == "alice"), None)
+        self.assertIsNotNone(alice_conv)
+        self.assertEqual(alice_conv["last_message"], "📷 Photo")
+
+        # 2. Bob replies to image-only message
+        reply_resp = self.client.post(
+            "/messages/alice",
+            json={"text": "Awesome capture!", "reply_to_message_id": img_msg_id},
+            headers=self.auth_headers("bob"),
+        )
+        self.assertEqual(reply_resp.status_code, 200)
+        reply_data = reply_resp.json()
+        self.assertIn("reply_to", reply_data)
+        self.assertEqual(reply_data["reply_to"]["content"], "📷 Photo")
+
+
 if __name__ == "__main__":
     unittest.main()

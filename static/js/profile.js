@@ -18,8 +18,23 @@ async function openProfile() {
             const preview = document.getElementById('profile-pic-preview');
             const safePic = sanitizeMediaUrl(myProfile.profile_picture);
             if (safePic) {
-                preview.src = safePic;
-                preview.style.display = 'block';
+                if (safePic.startsWith("http://") || safePic.startsWith("https://") || safePic.startsWith("blob:") || safePic.startsWith("data:")) {
+                    preview.src = safePic;
+                    preview.style.display = 'block';
+                } else if (typeof fetchSecureMediaBlobUrl === "function") {
+                    fetchSecureMediaBlobUrl(safePic).then(blobUrl => {
+                        if (blobUrl) {
+                            preview.src = blobUrl;
+                            preview.style.display = 'block';
+                        } else {
+                            preview.src = '';
+                            preview.style.display = 'none';
+                        }
+                    });
+                } else {
+                    preview.src = safePic;
+                    preview.style.display = 'block';
+                }
             } else {
                 preview.src = '';
                 preview.style.display = 'none';
@@ -66,6 +81,7 @@ async function handleProfilePicChange(input) {
     if (!input.files || input.files.length === 0) return;
     
     const file = input.files[0];
+    const localPreviewUrl = URL.createObjectURL(file);
     const formData = new FormData();
     formData.append("file", file);
     
@@ -84,6 +100,11 @@ async function handleProfilePicChange(input) {
         const uploadData = await uploadRes.json();
         const url = uploadData.url;
         
+        // Seed secure cache with local preview URL for instant rendering
+        if (typeof seedSecureMediaCache === "function") {
+            seedSecureMediaCache(url, localPreviewUrl);
+        }
+
         // Update profile picture
         const res = await fetch('/profile/picture', {
             method: 'PUT',
@@ -97,15 +118,9 @@ async function handleProfilePicChange(input) {
         });
         
         if (res.ok) {
-            const safeUrl = sanitizeMediaUrl(url);
             const preview = document.getElementById('profile-pic-preview');
-            if (safeUrl) {
-                preview.src = safeUrl;
-                preview.style.display = 'block';
-            } else {
-                preview.src = '';
-                preview.style.display = 'none';
-            }
+            preview.src = localPreviewUrl;
+            preview.style.display = 'block';
             showToast("Profile picture updated", "success");
         }
     } catch (e) {

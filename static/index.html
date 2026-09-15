@@ -361,9 +361,30 @@
             <button type="button" onclick="cancelReplyMode()" title="Cancel reply">&times;</button>
         </div>
 
+        <div id="media-preview-tray" class="media-preview-tray" style="display: none;">
+            <div class="media-preview-thumb-wrap">
+                <img id="media-preview-img" class="media-preview-img" alt="Upload preview">
+            </div>
+            <div class="media-preview-details">
+                <div class="media-preview-info">
+                    <span id="media-preview-name" class="media-preview-name"></span>
+                    <span id="media-preview-size" class="media-preview-size"></span>
+                </div>
+                <div id="media-progress-track" class="media-progress-track" style="display: none;">
+                    <div id="media-progress-fill" class="media-progress-fill" style="width: 0%;"></div>
+                </div>
+                <div id="media-preview-status" class="media-preview-status" style="display: none;"></div>
+            </div>
+            <div class="media-preview-actions">
+                <button id="media-preview-retry-btn" type="button" class="media-preview-btn retry" style="display: none;" onclick="retryUpload()" title="Retry upload">Retry</button>
+                <button id="media-preview-send-btn" type="button" class="media-preview-btn send" onclick="startUpload()" title="Send image">Send</button>
+                <button id="media-preview-cancel-btn" type="button" class="media-preview-btn cancel" onclick="cancelUpload()" title="Cancel upload">&times;</button>
+            </div>
+        </div>
+
         <div class="input-area">
-            <input type="file" id="input-gallery" style="display: none;" accept="image/*" onchange="handleFileUpload(this)">
-            <input type="file" id="input-camera" style="display: none;" accept="image/*" capture="environment" onchange="handleFileUpload(this)">
+            <input type="file" id="input-gallery" style="display: none;" accept="image/*" onchange="handleFileSelect(this)">
+            <input type="file" id="input-camera" style="display: none;" accept="image/*" capture="environment" onchange="handleFileSelect(this)">
             
             <button class="icon-btn" id="emoji-btn">🙂</button>
 
@@ -552,6 +573,14 @@
 
 <!-- Hidden audio element for remote audio playback -->
 <audio id="call-remote-audio" autoplay playsinline style="display:none;"></audio>
+
+<!-- Fullscreen Image Lightbox Modal -->
+<div id="image-lightbox-modal" class="lightbox-overlay" style="display: none;" onclick="handleLightboxBackdropClick(event)">
+    <div class="lightbox-content">
+        <img id="lightbox-img" class="lightbox-img" src="" alt="Fullscreen image">
+    </div>
+    <button id="lightbox-close-btn" class="lightbox-close-btn" type="button" onclick="closeImageLightbox()" aria-label="Close fullscreen view">&times;</button>
+</div>
 
 <script src="/static/js/core.js"></script>
 <script src="/static/js/utils.js"></script>

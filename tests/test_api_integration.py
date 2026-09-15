@@ -763,9 +763,11 @@ class TestUploadApi(ApiIntegrationTestCase):
         self.assertEqual(resp_spoofed.status_code, 415)
 
     def test_upload_oversized_rejected(self):
-        """Uploads exceeding max file size limit (5MB) are rejected with 413."""
-        # 5MB + 1KB of data with valid PNG header
-        oversized_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * (5 * 1024 * 1024 + 1024)
+        """Uploads exceeding max file size limit (10MB) are rejected with 413."""
+        from backend.services.upload_service import MAX_UPLOAD_SIZE
+
+        # MAX_UPLOAD_SIZE + 1KB of data with valid PNG header
+        oversized_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * (MAX_UPLOAD_SIZE + 1024)
         resp = self.client.post_file(
             "/upload",
             field_name="file",

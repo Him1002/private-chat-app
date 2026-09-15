@@ -101,6 +101,7 @@ class Settings:
         TURN_USERNAME: Optional[str] = None,
         TURN_CREDENTIAL: Optional[str] = None,
         CALL_TIMEOUT_SECONDS: Optional[Union[int, str]] = None,
+        MAX_IMAGE_SIZE_BYTES: Optional[Union[int, str]] = None,
     ):
         if _env_file is not None:
             if os.path.exists(_env_file):
@@ -220,6 +221,17 @@ class Settings:
         except (ValueError, TypeError):
             self.CALL_TIMEOUT_SECONDS = 30
 
+        # Rich media upload limit (Phase R1: default 10 MB)
+        raw_max_img = (
+            MAX_IMAGE_SIZE_BYTES
+            if MAX_IMAGE_SIZE_BYTES is not None
+            else os.getenv("MAX_IMAGE_SIZE_BYTES", str(10 * 1024 * 1024))
+        )
+        try:
+            self.MAX_IMAGE_SIZE_BYTES: int = max(1024, int(raw_max_img))
+        except (ValueError, TypeError):
+            self.MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024
+
     @property
     def is_production(self) -> bool:
         """Return True if running in production mode."""
@@ -281,7 +293,8 @@ class Settings:
             f"TURN_SERVER_URL={self.TURN_SERVER_URL!r}, "
             f"TURN_USERNAME={self.TURN_USERNAME!r}, "
             f"TURN_CREDENTIAL='***', "
-            f"CALL_TIMEOUT_SECONDS={self.CALL_TIMEOUT_SECONDS!r})"
+            f"CALL_TIMEOUT_SECONDS={self.CALL_TIMEOUT_SECONDS!r}, "
+            f"MAX_IMAGE_SIZE_BYTES={self.MAX_IMAGE_SIZE_BYTES!r})"
         )
 
     def __str__(self) -> str:

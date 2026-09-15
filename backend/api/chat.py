@@ -16,6 +16,7 @@ router = APIRouter()
 class MessageCreate(BaseModel):
     text: Optional[str] = None
     image_url: Optional[str] = None
+    reply_to_message_id: Optional[int] = None
 
 
 class MessageUpdate(BaseModel):
@@ -64,7 +65,14 @@ async def send_message(
     db: Session = Depends(get_db),
 ):
     try:
-        return chat_service.send_message(db, current_user, friend_username, data.text, data.image_url)
+        return chat_service.send_message(
+            db,
+            current_user,
+            friend_username,
+            data.text,
+            data.image_url,
+            reply_to_message_id=data.reply_to_message_id,
+        )
     except chat_service.NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except chat_service.BadRequestError as e:

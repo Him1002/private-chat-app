@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from backend.db.models import Message, User
 from backend.services.friend_service import are_friends
 from backend.services import reaction_service
+from backend.services.upload_service import is_video_file
 
 
 class NotFoundError(Exception):
@@ -47,7 +48,7 @@ def _build_reply_to_info(message: Message, current_user: User, friend: User) -> 
     elif parent.content:
         parent_content = parent.content
     elif parent.image_url:
-        parent_content = "📷 Photo"
+        parent_content = "🎥 Video" if is_video_file(parent.image_url) else "📷 Photo"
     else:
         parent_content = ""
 
@@ -63,13 +64,19 @@ def _build_reply_to_info(message: Message, current_user: User, friend: User) -> 
 def _message_to_dict(message: Message, current_user: User, friend: User, reactions: Optional[list] = None) -> dict:
     deleted_text = "This message was deleted"
     is_deleted = bool(message.is_deleted)
+    is_video = is_video_file(message.image_url) if message.image_url else False
+    video_url = message.image_url if (message.image_url and is_video) else None
+    img_url = message.image_url if (message.image_url and not is_video) else None
+    media_type = "video" if is_video else ("image" if message.image_url else None)
     return {
         "id": message.id,
         "sender": current_user.username if message.sender_id == current_user.id else friend.username,
         "sender_display_name": current_user.display_name if message.sender_id == current_user.id else friend.display_name,
         "receiver": friend.username if message.sender_id == current_user.id else current_user.username,
         "content": deleted_text if is_deleted else message.content,
-        "image_url": None if is_deleted else message.image_url,
+        "image_url": None if is_deleted else img_url,
+        "video_url": None if is_deleted else video_url,
+        "media_type": None if is_deleted else media_type,
         "timestamp": _serialize_message_timestamp(message.timestamp),
         "edited_at": _serialize_message_timestamp(message.edited_at),
         "status": "read" if message.is_read else "sent",
@@ -119,13 +126,19 @@ def serialize_message_for_websocket(
     reactions: Optional[list] = None,
 ) -> Dict:
     deleted_text = "This message was deleted"
+    is_video = is_video_file(message.image_url) if message.image_url else False
+    video_url = message.image_url if (message.image_url and is_video) else None
+    img_url = message.image_url if (message.image_url and not is_video) else None
+    media_type = "video" if is_video else ("image" if message.image_url else None)
     payload = {
         "id": message.id,
         "type": event_type,
         "sender": current_user.username if message.sender_id == current_user.id else friend.username,
         "sender_display_name": current_user.display_name if message.sender_id == current_user.id else friend.display_name,
         "text": deleted_text if message.is_deleted else message.content,
-        "image_url": None if message.is_deleted else message.image_url,
+        "image_url": None if message.is_deleted else img_url,
+        "video_url": None if message.is_deleted else video_url,
+        "media_type": None if message.is_deleted else media_type,
         "timestamp": _serialize_message_timestamp(message.timestamp),
         "edited_at": _serialize_message_timestamp(message.edited_at),
         "status": "read" if message.is_read else "sent",
@@ -142,11 +155,13 @@ def create_message(
     db: Session,
     sender: User,
     receiver: User,
-    text: Optional[str],
-    image_url: Optional[str],
+    text: Optional[str] = None,
+    image_url: Optional[str] = None,
+    video_url: Optional[str] = None,
     reply_to_message_id: Optional[int] = None,
 ) -> Message:
-    if not text and not image_url:
+    media_url = video_url or image_url
+    if not text and not media_url:
         raise BadRequestError("Message body cannot be empty")
 
     if reply_to_message_id is not None:
@@ -163,7 +178,7 @@ def create_message(
         sender_id=sender.id,
         receiver_id=receiver.id,
         content=text,
-        image_url=image_url,
+        image_url=media_url,
         timestamp=datetime.now(timezone.utc),
         reply_to_message_id=reply_to_message_id,
     )
@@ -230,7 +245,7 @@ def list_conversations(db: Session, current_user: User) -> List[Dict]:
             elif last_message.content:
                 last_message_text = last_message.content
             elif last_message.image_url:
-                last_message_text = "📷 Photo"
+                last_message_text = "🎥 Video" if is_video_file(last_message.image_url) else "📷 Photo"
 
         unread_count = get_unread_count(db, current_user.id, friend.id)
 
@@ -260,8 +275,9 @@ def send_message(
     db: Session,
     current_user: User,
     friend_username: str,
-    text: Optional[str],
-    image_url: Optional[str],
+    text: Optional[str] = None,
+    image_url: Optional[str] = None,
+    video_url: Optional[str] = None,
     reply_to_message_id: Optional[int] = None,
 ) -> Dict:
     friend = get_chat_friend(db, current_user, friend_username)
@@ -270,7 +286,8 @@ def send_message(
         current_user,
         friend,
         text,
-        image_url,
+        image_url=image_url,
+        video_url=video_url,
         reply_to_message_id=reply_to_message_id,
     )
 

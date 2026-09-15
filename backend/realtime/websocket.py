@@ -528,6 +528,14 @@ async def websocket_endpoint(websocket: WebSocket,
                     }))
                     continue
 
+                vid_url = data.get("video_url")
+                if vid_url is not None and not isinstance(vid_url, str):
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Video URL must be a string",
+                    }))
+                    continue
+
                 reply_to_id = data.get("reply_to_message_id")
 
                 try:
@@ -549,7 +557,9 @@ async def websocket_endpoint(websocket: WebSocket,
                         continue
 
                 try:
-                    new_msg = chat_service.create_message(db, user, friend, text, img_url, reply_to_message_id=parsed_reply_to)
+                    new_msg = chat_service.create_message(
+                        db, user, friend, text, img_url, video_url=vid_url, reply_to_message_id=parsed_reply_to
+                    )
                 except chat_service.BadRequestError as exc:
                     await websocket.send_text(json.dumps({
                         "type": "error",

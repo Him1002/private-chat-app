@@ -153,7 +153,7 @@ class TestMessageSerialization(BaseTestCase):
 
         expected_keys = {
             "id", "sender", "sender_display_name", "receiver", "content",
-            "image_url", "timestamp", "edited_at", "status", "is_read",
+            "image_url", "video_url", "media_type", "timestamp", "edited_at", "status", "is_read",
             "read_at", "is_deleted", "deleted_at", "reactions", "reply_to"
         }
         self.assertEqual(set(serialized.keys()), expected_keys)
@@ -163,6 +163,8 @@ class TestMessageSerialization(BaseTestCase):
         self.assertEqual(serialized["receiver"], "bob")
         self.assertEqual(serialized["content"], "Hello serialization")
         self.assertEqual(serialized["image_url"], "https://example.com/avatar.png")
+        self.assertIsNone(serialized["video_url"])
+        self.assertEqual(serialized["media_type"], "image")
         self.assertTrue(serialized["timestamp"].endswith("Z"))
         self.assertIsNone(serialized["edited_at"])
         self.assertEqual(serialized["status"], "sent")

@@ -46,6 +46,8 @@ PNG_FIXTURE = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + b"\x22" * 16
 GIF87A_FIXTURE = b"GIF87a\x01\x00\x01\x00\x80\x00\x00" + b"\x33" * 16
 GIF89A_FIXTURE = b"GIF89a\x01\x00\x01\x00\x80\x00\x00" + b"\x44" * 16
 WEBP_FIXTURE = b"RIFF\x20\x00\x00\x00WEBPVP8 " + b"\x55" * 16
+MP4_FIXTURE = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"\x66" * 32
+WEBM_FIXTURE = b"\x1a\x45\xdf\xa3\x9f\x42\x86\x81\x01\x42\xf7\x81\x01\x42\xf2\x81\x04\x42\x87\x84webm" + b"\x77" * 32
 
 
 # ==============================================================================
@@ -1017,6 +1019,220 @@ class TestMediaAuthorizationAndPreviews(UploadSecurityTestCase):
         reply_data = reply_resp.json()
         self.assertIn("reply_to", reply_data)
         self.assertEqual(reply_data["reply_to"]["content"], "📷 Photo")
+
+
+# ==============================================================================
+# 11. Phase R2 Video Messaging Upload Security & Invariants
+# ==============================================================================
+class TestPhaseR2VideoUploadSecurity(UploadSecurityTestCase):
+    """Focused tests covering Phase R2 video upload security, validation, and lifecycle."""
+
+    def test_valid_mp4_upload_accepted(self):
+        """Valid MP4 upload returns 200 and URL ending with .mp4."""
+        resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="sample.mp4",
+            file_bytes=MP4_FIXTURE,
+            content_type="video/mp4",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(resp.status_code, 200)
+        url = resp.json().get("url")
+        self.assertIsNotNone(url)
+        self.assertTrue(url.startswith("/uploads/"))
+        self.assertTrue(url.endswith(".mp4"))
+        self.track_file(url)
+
+    def test_valid_webm_upload_accepted(self):
+        """Valid WebM upload returns 200 and URL ending with .webm."""
+        resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="sample.webm",
+            file_bytes=WEBM_FIXTURE,
+            content_type="video/webm",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(resp.status_code, 200)
+        url = resp.json().get("url")
+        self.assertIsNotNone(url)
+        self.assertTrue(url.startswith("/uploads/"))
+        self.assertTrue(url.endswith(".webm"))
+        self.track_file(url)
+
+    def test_invalid_video_magic_bytes_rejected(self):
+        """Invalid content spoofing video extension returns 415."""
+        resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="fake.mp4",
+            file_bytes=b"PLAIN_TEXT_NOT_A_VIDEO_FILE_AT_ALL",
+            content_type="video/mp4",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(resp.status_code, 415)
+        self.assertNotIn("url", resp.json())
+
+    def test_oversized_video_rejected_and_cleaned_up(self):
+        """Video exceeding MAX_VIDEO_SIZE_BYTES returns 413 and cleans up partial file."""
+        from unittest.mock import patch
+        from backend.services import upload_service
+
+        # Temporarily mock video size limit to small threshold
+        with patch.object(upload_service, "get_file_size_limit", return_value=len(MP4_FIXTURE) + 10):
+            oversized_bytes = MP4_FIXTURE + b"\x00" * 100
+            resp = self.client.post_file(
+                "/upload",
+                field_name="file",
+                filename="big.mp4",
+                file_bytes=oversized_bytes,
+                content_type="video/mp4",
+                headers=self.auth_headers("alice"),
+            )
+            self.assertEqual(resp.status_code, 413)
+
+            # Confirm no leftover files created on disk
+            current_files = set(os.listdir(settings.UPLOADS_DIR)) if os.path.exists(settings.UPLOADS_DIR) else set()
+            new_files = current_files - self._initial_files
+            self.assertEqual(len(new_files), 0, f"Leftover files found on disk after 413: {new_files}")
+
+    def test_authenticated_participants_can_access_chat_video(self):
+        """Sender and receiver can access video via GET /uploads/{filename}; non-participants cannot."""
+        # 1. Alice uploads MP4
+        up_resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="private_video.mp4",
+            file_bytes=MP4_FIXTURE,
+            content_type="video/mp4",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(up_resp.status_code, 200)
+        vid_url = up_resp.json()["url"]
+        self.track_file(vid_url)
+
+        # 2. Alice sends message with video_url to Bob
+        msg_resp = self.client.post(
+            "/messages/bob",
+            json={"text": "Check this video", "video_url": vid_url},
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(msg_resp.status_code, 200)
+        msg_data = msg_resp.json()
+        self.assertEqual(msg_data.get("video_url"), vid_url)
+        self.assertEqual(msg_data.get("media_type"), "video")
+
+        # 3. Alice (sender) accesses video -> 200
+        alice_get = self.client.get(vid_url, headers=self.auth_headers("alice"))
+        self.assertEqual(alice_get.status_code, 200)
+        self.assertEqual(alice_get.content, MP4_FIXTURE)
+        self.assertEqual(alice_get.headers.get("content-type"), "video/mp4")
+
+        # 4. Bob (receiver) accesses video -> 200
+        bob_get = self.client.get(vid_url, headers=self.auth_headers("bob"))
+        self.assertEqual(bob_get.status_code, 200)
+        self.assertEqual(bob_get.content, MP4_FIXTURE)
+
+        # 5. Anonymous request -> 401
+        anon_get = self.client.get(vid_url)
+        self.assertEqual(anon_get.status_code, 401)
+
+        # 6. Charlie (third-party) -> 403
+        charlie_get = self.client.get(vid_url, headers=self.auth_headers("charlie"))
+        self.assertEqual(charlie_get.status_code, 403)
+
+    def test_deleted_video_returns_404(self):
+        """Soft-deleted message video immediately returns 404 to all users."""
+        up_resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="deleted_video.mp4",
+            file_bytes=MP4_FIXTURE,
+            content_type="video/mp4",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(up_resp.status_code, 200)
+        vid_url = up_resp.json()["url"]
+        self.track_file(vid_url)
+
+        msg_resp = self.client.post(
+            "/messages/bob",
+            json={"text": "Temporary clip", "video_url": vid_url},
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(msg_resp.status_code, 200)
+        msg_id = msg_resp.json()["id"]
+
+        # Before deletion: accessible
+        self.assertEqual(self.client.get(vid_url, headers=self.auth_headers("alice")).status_code, 200)
+
+        # Delete message
+        del_resp = self.client.delete(f"/messages/{msg_id}", headers=self.auth_headers("alice"))
+        self.assertEqual(del_resp.status_code, 200)
+
+        # After deletion: immediately 404
+        self.assertEqual(self.client.get(vid_url, headers=self.auth_headers("alice")).status_code, 404)
+        self.assertEqual(self.client.get(vid_url, headers=self.auth_headers("bob")).status_code, 404)
+
+    def test_unlinked_video_returns_404(self):
+        """Uploaded video not linked to any active message returns 404."""
+        up_resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="orphan_video.mp4",
+            file_bytes=MP4_FIXTURE,
+            content_type="video/mp4",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(up_resp.status_code, 200)
+        vid_url = up_resp.json()["url"]
+        self.track_file(vid_url)
+
+        # Not linked to any message -> 404
+        self.assertEqual(self.client.get(vid_url, headers=self.auth_headers("alice")).status_code, 404)
+
+    def test_video_reply_and_conversation_preview_serialization(self):
+        """Video message serializes as '🎥 Video' in replies and conversation list."""
+        up_resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="preview_vid.mp4",
+            file_bytes=MP4_FIXTURE,
+            content_type="video/mp4",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(up_resp.status_code, 200)
+        vid_url = up_resp.json()["url"]
+        self.track_file(vid_url)
+
+        # Alice sends video-only message
+        msg_resp = self.client.post(
+            "/messages/bob",
+            json={"text": "", "video_url": vid_url},
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(msg_resp.status_code, 200)
+        vid_msg_id = msg_resp.json()["id"]
+
+        # 1. Bob checks conversations list -> last_message should be "🎥 Video"
+        conv_resp = self.client.get("/conversations", headers=self.auth_headers("bob"))
+        self.assertEqual(conv_resp.status_code, 200)
+        convs = conv_resp.json()
+        alice_conv = next((c for c in convs if c["username"] == "alice"), None)
+        self.assertIsNotNone(alice_conv)
+        self.assertEqual(alice_conv["last_message"], "🎥 Video")
+
+        # 2. Bob replies to video message
+        reply_resp = self.client.post(
+            "/messages/alice",
+            json={"text": "Nice video clip!", "reply_to_message_id": vid_msg_id},
+            headers=self.auth_headers("bob"),
+        )
+        self.assertEqual(reply_resp.status_code, 200)
+        reply_data = reply_resp.json()
+        self.assertIn("reply_to", reply_data)
+        self.assertEqual(reply_data["reply_to"]["content"], "🎥 Video")
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ router = APIRouter()
 class MessageCreate(BaseModel):
     text: Optional[str] = None
     image_url: Optional[str] = None
+    video_url: Optional[str] = None
     reply_to_message_id: Optional[int] = None
 
 
@@ -71,6 +72,7 @@ async def send_message(
             friend_username,
             data.text,
             data.image_url,
+            video_url=data.video_url,
             reply_to_message_id=data.reply_to_message_id,
         )
     except chat_service.NotFoundError as e:

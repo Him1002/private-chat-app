@@ -455,6 +455,9 @@ function applyDeletedState(messageEl, deletedAt) {
     const imageEl = messageEl.querySelector("img");
     if (imageEl) imageEl.remove();
 
+    const videoEl = messageEl.querySelector("video");
+    if (videoEl) videoEl.remove();
+
     const editedEl = messageEl.querySelector(".msg-edited");
     if (editedEl) editedEl.remove();
 
@@ -536,7 +539,14 @@ function enterReplyMode(messageEl) {
     const isDeleted = isMessageDeleted(messageEl);
     const senderName = messageEl.querySelector(".sender-name");
     const sender = messageEl.classList.contains("me") ? "You" : (senderName ? senderName.textContent : "");
-    const content = isDeleted ? "This message was deleted" : (messageEl.dataset.text || (messageEl.dataset.imageUrl ? "📷 Photo" : ""));
+    let mediaPlaceholder = "";
+    if (messageEl.dataset.videoUrl) {
+        mediaPlaceholder = "🎥 Video";
+    } else if (messageEl.dataset.imageUrl) {
+        const urlLower = messageEl.dataset.imageUrl.toLowerCase();
+        mediaPlaceholder = (urlLower.endsWith(".mp4") || urlLower.endsWith(".webm")) ? "🎥 Video" : "📷 Photo";
+    }
+    const content = isDeleted ? "This message was deleted" : (messageEl.dataset.text || mediaPlaceholder);
 
     activeReplyTarget = {
         messageId,
@@ -879,18 +889,24 @@ function handleLightboxKeyDown(event) {
     }
 }
 
-function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "", reactions = null, replyTo = null) {
+function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "", reactions = null, replyTo = null, videoUrl = null) {
     const box = document.getElementById("messages");
     const isMe = sender === currentUser;
     const deleted = Boolean(isDeleted || text === "This message was deleted");
     const safeText = deleted ? "This message was deleted" : (text || "");
-    const safeImageUrl = deleted ? "" : imageUrl || "";
+
+    // Resolve media: explicit videoUrl or video extension in imageUrl
+    const rawMedia = videoUrl || imageUrl || "";
+    const isVideo = Boolean(videoUrl) || (rawMedia && (rawMedia.toLowerCase().endsWith(".mp4") || rawMedia.toLowerCase().endsWith(".webm")));
+    const safeVideoUrl = deleted ? "" : (isVideo ? rawMedia : "");
+    const safeImageUrl = deleted ? "" : (!isVideo ? rawMedia : "");
 
     const div = document.createElement("div");
     div.className = `msg ${isMe ? "me" : "friend"}`;
     div.dataset.messageId = messageId || "";
     div.dataset.text = safeText;
     div.dataset.imageUrl = safeImageUrl;
+    div.dataset.videoUrl = safeVideoUrl;
     div.dataset.status = normalizeMessageStatus(status, status === "read");
     div.dataset.editedAt = editedAt || "";
     div.dataset.isDeleted = deleted ? "true" : "false";
@@ -923,8 +939,10 @@ function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messag
         }
     }
 
-    // 3. Media image with secure authenticated loading
+    // 3. Media image / video with secure authenticated loading
     const validatedImageUrl = sanitizeMediaUrl(safeImageUrl);
+    const validatedVideoUrl = sanitizeMediaUrl(safeVideoUrl);
+
     if (!deleted && validatedImageUrl) {
         const imgEl = document.createElement("img");
         imgEl.alt = "message image";
@@ -952,6 +970,55 @@ function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messag
                 openImageLightbox(imgEl.src);
             }
         });
+    } else if (!deleted && validatedVideoUrl) {
+        const videoEl = document.createElement("video");
+        videoEl.className = "msg-video loading";
+        videoEl.controls = true;
+        videoEl.playsInline = true;
+        videoEl.preload = "metadata";
+        div.appendChild(videoEl);
+
+        if (typeof secureMediaCache !== "undefined" && secureMediaCache.has(validatedVideoUrl)) {
+            videoEl.src = secureMediaCache.get(validatedVideoUrl);
+            videoEl.classList.remove("loading");
+        } else if (typeof fetchSecureMediaBlobUrl === "function") {
+            let fetched = false;
+            const loadVideo = () => {
+                if (fetched) return;
+                fetched = true;
+                fetchSecureMediaBlobUrl(validatedVideoUrl).then((blobUrl) => {
+                    if (blobUrl) {
+                        videoEl.src = blobUrl;
+                        videoEl.classList.remove("loading");
+                    } else {
+                        videoEl.classList.remove("loading");
+                    }
+                }).catch(() => {
+                    videoEl.classList.remove("loading");
+                });
+            };
+
+            // Use IntersectionObserver so video only loads when scrolled into view
+            if ("IntersectionObserver" in window) {
+                const observer = new IntersectionObserver((entries) => {
+                    entries.forEach((entry) => {
+                        if (entry.isIntersecting) {
+                            loadVideo();
+                            observer.disconnect();
+                        }
+                    });
+                }, { rootMargin: "200px" });
+                observer.observe(videoEl);
+            } else {
+                loadVideo();
+            }
+
+            // Also load immediately if clicked before observer triggers
+            videoEl.addEventListener("play", loadVideo, { once: true });
+        } else {
+            videoEl.src = validatedVideoUrl;
+            videoEl.classList.remove("loading");
+        }
     }
 
     // 4. Message text

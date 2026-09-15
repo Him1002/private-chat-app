@@ -647,7 +647,8 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.media-preview-img {
+.media-preview-img,
+.media-preview-video {
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -677,6 +678,16 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 160px;
+}
+
+.media-preview-duration {
+    font-size: 11px;
+    font-weight: 600;
+    color: #0084ff;
+    background: rgba(0, 132, 255, 0.15);
+    padding: 1px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
 }
 
 .media-preview-size {
@@ -749,26 +760,38 @@
     color: #ff6b6b;
 }
 
-/* 2. Chat Bubble Image Styling */
-.msg img {
+/* 2. Chat Bubble Image & Video Styling */
+.msg img,
+.msg video {
     max-width: 280px;
     max-height: 320px;
     width: auto;
     height: auto;
     border-radius: 12px;
     display: block;
-    cursor: pointer;
     object-fit: cover;
+}
+
+.msg img {
+    cursor: pointer;
     transition: filter 0.15s ease, transform 0.12s ease;
 }
+
 .msg img:hover {
     filter: brightness(0.95);
 }
-.msg img.loading {
+
+.msg img.loading,
+.msg video.loading {
     min-width: 140px;
     min-height: 100px;
     background: rgba(255, 255, 255, 0.05);
     opacity: 0.6;
+}
+
+.msg video {
+    background: #000000;
+    outline: none;
 }
 
 /* 3. Fullscreen Lightbox Modal */

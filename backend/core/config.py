@@ -102,6 +102,8 @@ class Settings:
         TURN_CREDENTIAL: Optional[str] = None,
         CALL_TIMEOUT_SECONDS: Optional[Union[int, str]] = None,
         MAX_IMAGE_SIZE_BYTES: Optional[Union[int, str]] = None,
+        MAX_VIDEO_SIZE_BYTES: Optional[Union[int, str]] = None,
+        MAX_VIDEO_DURATION_SECONDS: Optional[Union[int, str]] = None,
     ):
         if _env_file is not None:
             if os.path.exists(_env_file):
@@ -232,6 +234,28 @@ class Settings:
         except (ValueError, TypeError):
             self.MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024
 
+        # Rich media video upload limit (Phase R2: default 50 MB)
+        raw_max_video = (
+            MAX_VIDEO_SIZE_BYTES
+            if MAX_VIDEO_SIZE_BYTES is not None
+            else os.getenv("MAX_VIDEO_SIZE_BYTES", str(50 * 1024 * 1024))
+        )
+        try:
+            self.MAX_VIDEO_SIZE_BYTES: int = max(1024, int(raw_max_video))
+        except (ValueError, TypeError):
+            self.MAX_VIDEO_SIZE_BYTES = 50 * 1024 * 1024
+
+        # Rich media video duration limit (Phase R2: default 120 seconds / 2 minutes)
+        raw_max_duration = (
+            MAX_VIDEO_DURATION_SECONDS
+            if MAX_VIDEO_DURATION_SECONDS is not None
+            else os.getenv("MAX_VIDEO_DURATION_SECONDS", "120")
+        )
+        try:
+            self.MAX_VIDEO_DURATION_SECONDS: int = max(1, int(raw_max_duration))
+        except (ValueError, TypeError):
+            self.MAX_VIDEO_DURATION_SECONDS = 120
+
     @property
     def is_production(self) -> bool:
         """Return True if running in production mode."""
@@ -294,7 +318,9 @@ class Settings:
             f"TURN_USERNAME={self.TURN_USERNAME!r}, "
             f"TURN_CREDENTIAL='***', "
             f"CALL_TIMEOUT_SECONDS={self.CALL_TIMEOUT_SECONDS!r}, "
-            f"MAX_IMAGE_SIZE_BYTES={self.MAX_IMAGE_SIZE_BYTES!r})"
+            f"MAX_IMAGE_SIZE_BYTES={self.MAX_IMAGE_SIZE_BYTES!r}, "
+            f"MAX_VIDEO_SIZE_BYTES={self.MAX_VIDEO_SIZE_BYTES!r}, "
+            f"MAX_VIDEO_DURATION_SECONDS={self.MAX_VIDEO_DURATION_SECONDS!r})"
         )
 
     def __str__(self) -> str:

@@ -60,6 +60,15 @@ function logout() {
     if (typeof revokeSecureMediaCache === "function") {
         revokeSecureMediaCache();
     }
+    if (typeof cancelVoiceRecording === "function") {
+        cancelVoiceRecording();
+    }
+    if (typeof cancelVoicePreview === "function") {
+        cancelVoicePreview();
+    }
+    if (typeof stopAllPlayingAudios === "function") {
+        stopAllPlayingAudios();
+    }
 
     // 2. Destroy Session Data
     token = null;

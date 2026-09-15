@@ -26,6 +26,7 @@ MAX_UPLOAD_SIZE = getattr(settings, "MAX_IMAGE_SIZE_BYTES", 10 * 1024 * 1024)
 MAX_IMAGE_SIZE = getattr(settings, "MAX_IMAGE_SIZE_BYTES", 10 * 1024 * 1024)
 MAX_VIDEO_SIZE = getattr(settings, "MAX_VIDEO_SIZE_BYTES", 50 * 1024 * 1024)
 MAX_FILE_SIZE = getattr(settings, "MAX_FILE_SIZE_BYTES", 25 * 1024 * 1024)
+MAX_VOICE_SIZE = getattr(settings, "MAX_VOICE_SIZE_BYTES", 10 * 1024 * 1024)
 
 # Allowed magic bytes and their corresponding extensions
 ALLOWED_MAGIC_BYTES = {
@@ -40,7 +41,10 @@ VIDEO_EXTENSIONS = {"mp4", "webm"}
 IMAGE_EXTENSIONS = {"jpeg", "png", "gif", "webp"}
 DOCUMENT_EXTENSIONS = {"pdf", "txt", "csv", "json", "docx", "xlsx", "pptx"}
 DOWNLOAD_ONLY_EXTENSIONS = {"docx", "xlsx", "pptx", "csv"}
-ALL_ALLOWED_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS | DOCUMENT_EXTENSIONS
+VOICE_EXTENSIONS = {"webm", "ogg", "mp3", "wav", "m4a", "aac"}
+AUDIO_ONLY_EXTENSIONS = {"ogg", "mp3", "wav", "m4a", "aac"}
+ALL_ALLOWED_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS | DOCUMENT_EXTENSIONS | VOICE_EXTENSIONS
+
 
 # Common dangerous binary and executable signatures to reject immediately
 DANGEROUS_MAGIC_PREFIXES = [
@@ -58,9 +62,28 @@ DANGEROUS_MAGIC_PREFIXES = [
 ]
 
 
+def is_voice_file(filename_or_url: str) -> bool:
+    """Return True if the given filename or URL is an audio/voice file."""
+    if not filename_or_url:
+        return False
+    clean = filename_or_url.lower().split("?")[0]
+    base = os.path.basename(clean)
+    ext = clean.split(".")[-1]
+    if ext in AUDIO_ONLY_EXTENSIONS:
+        return True
+    if base.startswith("voice_") or "voice" in base:
+        return True
+    meta = get_upload_metadata(filename_or_url)
+    if meta and (meta.get("is_voice") or meta.get("media_type") == "voice"):
+        return True
+    return False
+
+
 def is_video_file(filename_or_url: str) -> bool:
     """Return True if the given filename or URL has a supported video extension."""
     if not filename_or_url:
+        return False
+    if is_voice_file(filename_or_url):
         return False
     ext = filename_or_url.lower().split("?")[0].split(".")[-1]
     return ext in VIDEO_EXTENSIONS
@@ -74,13 +97,16 @@ def is_document_file(filename_or_url: str) -> bool:
     return ext in DOCUMENT_EXTENSIONS
 
 
-def get_file_size_limit(ext: str) -> int:
-    """Return the configured size limit in bytes based on file extension."""
+def get_file_size_limit(ext: str, is_voice: bool = False) -> int:
+    """Return the configured size limit in bytes based on file extension and media type."""
+    if is_voice or ext in AUDIO_ONLY_EXTENSIONS:
+        return getattr(settings, "MAX_VOICE_SIZE_BYTES", 10 * 1024 * 1024)
     if ext in VIDEO_EXTENSIONS:
         return getattr(settings, "MAX_VIDEO_SIZE_BYTES", 50 * 1024 * 1024)
     if ext in DOCUMENT_EXTENSIONS:
         return getattr(settings, "MAX_FILE_SIZE_BYTES", 25 * 1024 * 1024)
     return getattr(settings, "MAX_IMAGE_SIZE_BYTES", 10 * 1024 * 1024)
+
 
 
 def _file_ext_from_filename(original_filename: str) -> str:
@@ -112,14 +138,17 @@ def sanitize_original_filename(filename: str, ext: str) -> str:
     return cleaned
 
 
-def generate_filename(original_filename: str, validated_ext: str = None) -> str:
+def generate_filename(original_filename: str, validated_ext: str = None, is_voice: bool = False) -> str:
     """Generate a new filename based on a UUID and the original or validated extension.
 
     Preserves the exact formatting used by the previous implementation.
     If a validated extension is provided, it is used instead of trusting the original.
+    Voice uploads are prefixed with 'voice_' to guarantee unambiguous detection.
     """
     file_ext = validated_ext if validated_ext else _file_ext_from_filename(original_filename)
-    return f"{uuid.uuid4()}.{file_ext}"
+    prefix = "voice_" if is_voice else ""
+    return f"{prefix}{uuid.uuid4()}.{file_ext}"
+
 
 
 def upload_file_path(filename: str) -> str:
@@ -231,11 +260,39 @@ def validate_text_content(file_path: str, ext: str) -> None:
         )
 
 
+def extract_and_validate_voice_duration(file_path: str, ext: str) -> Optional[float]:
+    """Validate voice message duration if extractable from audio container.
+
+    Enforces MAX_VOICE_DURATION_SECONDS. Raises HTTPException 400 if exceeded.
+    """
+    max_duration = getattr(settings, "MAX_VOICE_DURATION_SECONDS", 120)
+    duration: Optional[float] = None
+
+    if ext == "wav":
+        try:
+            import wave
+            with wave.open(file_path, "rb") as wf:
+                frames = wf.getnframes()
+                rate = wf.getframerate()
+                if rate > 0:
+                    duration = frames / float(rate)
+        except Exception:
+            pass
+
+    if duration is not None and duration > max_duration:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Voice message exceeds duration limit of {max_duration} seconds",
+        )
+    return duration
+
+
 def get_file_ext_from_magic_bytes(header_bytes: bytes, original_filename: str = "") -> str:
     """Determine the file extension by checking magic bytes against allowlists.
 
     Preserves exact detection behavior for images and videos, and validates
-    allowed document extensions (PDF, DOCX, XLSX, PPTX, TXT, CSV, JSON).
+    allowed document extensions (PDF, DOCX, XLSX, PPTX, TXT, CSV, JSON) and
+    voice/audio extensions (WEBM, OGG, MP3, WAV, M4A).
     """
     orig_ext = _file_ext_from_filename(original_filename).lower() if original_filename else ""
 
@@ -252,9 +309,48 @@ def get_file_ext_from_magic_bytes(header_bytes: bytes, original_filename: str = 
         )
 
     # If filename indicates a video, strictly validate against video magic bytes
-    if orig_ext in {"mp4", "webm"}:
+    if orig_ext in {"mp4"}:
         if len(header_bytes) >= 8 and header_bytes[4:8] == b"ftyp":
             return "mp4"
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported or invalid image file type",
+        )
+
+    # If filename indicates audio/voice formats
+    if orig_ext in {"ogg"}:
+        if header_bytes.startswith(b"OggS"):
+            return "ogg"
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported or invalid image file type",
+        )
+
+    if orig_ext in {"wav"}:
+        if header_bytes.startswith(b"RIFF") and len(header_bytes) >= 12 and header_bytes[8:12] == b"WAVE":
+            return "wav"
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported or invalid image file type",
+        )
+
+    if orig_ext in {"mp3"}:
+        if header_bytes.startswith(b"ID3") or (len(header_bytes) >= 2 and header_bytes[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")):
+            return "mp3"
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported or invalid image file type",
+        )
+
+    if orig_ext in {"m4a", "aac"}:
+        if len(header_bytes) >= 8 and header_bytes[4:8] == b"ftyp":
+            return "m4a"
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported or invalid image file type",
+        )
+
+    if orig_ext in {"webm"}:
         if header_bytes.startswith(b"\x1a\x45\xdf\xa3"):
             return "webm"
         raise HTTPException(
@@ -274,6 +370,14 @@ def get_file_ext_from_magic_bytes(header_bytes: bytes, original_filename: str = 
         return "mp4"
     if header_bytes.startswith(b"\x1a\x45\xdf\xa3"):
         return "webm"
+
+    # Check audio formats (when extension not explicitly audio)
+    if header_bytes.startswith(b"OggS"):
+        return "ogg"
+    if header_bytes.startswith(b"ID3") or (len(header_bytes) >= 2 and header_bytes[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")):
+        return "mp3"
+    if header_bytes.startswith(b"RIFF") and len(header_bytes) >= 12 and header_bytes[8:12] == b"WAVE":
+        return "wav"
 
     # Check document types with original filename context
     if orig_ext:
@@ -327,6 +431,9 @@ def save_upload(file: UploadFile) -> dict:
         )
 
     orig_filename = file.filename or ""
+    orig_ext = _file_ext_from_filename(orig_filename).lower() if orig_filename else ""
+    content_type = getattr(file, "content_type", "") or ""
+
     # Reject known dangerous prefixes immediately
     for prefix in DANGEROUS_MAGIC_PREFIXES:
         if header.lower().startswith(prefix.lower()):
@@ -343,10 +450,17 @@ def save_upload(file: UploadFile) -> dict:
             detail="Unsupported or invalid image file type",
         )
 
+    is_voice = (
+        content_type.startswith("audio/")
+        or orig_ext in AUDIO_ONLY_EXTENSIONS
+        or validated_ext in AUDIO_ONLY_EXTENSIONS
+        or orig_filename.lower().startswith("voice")
+    )
+
     # Generate storage filename using preserved logic with validated extension
-    filename = generate_filename(orig_filename, validated_ext)
+    filename = generate_filename(orig_filename, validated_ext, is_voice=is_voice)
     file_path = upload_file_path(filename)
-    max_size = get_file_size_limit(validated_ext)
+    max_size = get_file_size_limit(validated_ext, is_voice=is_voice)
 
     # Stream file contents to disk and enforce max size
     with open(file_path, "wb") as buffer:
@@ -369,7 +483,7 @@ def save_upload(file: UploadFile) -> dict:
                 )
             buffer.write(chunk)
 
-    # Post-stream content validation for document types
+    # Post-stream content validation for document types and voice duration
     try:
         if validated_ext in {"docx", "xlsx", "pptx"}:
             validate_ooxml_structure(file_path, validated_ext)
@@ -377,12 +491,21 @@ def save_upload(file: UploadFile) -> dict:
             validate_json_content(file_path)
         elif validated_ext in {"txt", "csv"}:
             validate_text_content(file_path, validated_ext)
+        elif is_voice:
+            extract_and_validate_voice_duration(file_path, validated_ext)
     except Exception:
         try:
             os.remove(file_path)
         except OSError:
             pass
         raise
+
+    duration = None
+    if is_voice:
+        try:
+            duration = extract_and_validate_voice_duration(file_path, validated_ext)
+        except Exception:
+            pass
 
     # Store trusted upload metadata sidecar for server-authoritative filename resolution
     safe_name = sanitize_original_filename(orig_filename, validated_ext)
@@ -391,6 +514,9 @@ def save_upload(file: UploadFile) -> dict:
         "original_filename": safe_name,
         "size": total_size,
         "ext": validated_ext,
+        "is_voice": is_voice,
+        "media_type": "voice" if is_voice else ("video" if validated_ext in VIDEO_EXTENSIONS else ("file" if validated_ext in DOCUMENT_EXTENSIONS else "image")),
+        "duration": duration,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     try:
@@ -404,5 +530,8 @@ def save_upload(file: UploadFile) -> dict:
         "url": upload_url,
         "filename": safe_name,
         "size": total_size,
+        "is_voice": is_voice,
+        "duration": duration,
     }
+
 

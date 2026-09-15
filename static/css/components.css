@@ -1058,4 +1058,308 @@
     color: #ffffff;
 }
 
+/* ==========================================================================
+   7. Voice Messages (Phase R4)
+   ========================================================================== */
+
+/* Voice Recording Bar (in Composer) */
+.voice-record-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 14px;
+    background: rgba(255, 59, 48, 0.12);
+    border: 1px solid rgba(255, 59, 48, 0.35);
+    border-radius: 10px;
+    margin: 4px 10px;
+    box-sizing: border-box;
+    animation: fadeInTray 0.2s ease-out;
+}
+
+.voice-record-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #ff5e5e;
+    font-weight: 600;
+}
+
+.voice-record-pulse {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #ff3b30;
+    box-shadow: 0 0 8px #ff3b30;
+    animation: recordPulse 1.2s infinite ease-in-out;
+}
+
+@keyframes recordPulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.3); opacity: 0.5; }
+}
+
+.voice-record-timer {
+    font-family: monospace, sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    color: #ffffff;
+    min-width: 36px;
+}
+
+.voice-record-limit {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 400;
+}
+
+.voice-record-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.voice-btn-cancel {
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    color: #e0e0e0;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.voice-btn-cancel:hover {
+    background: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+}
+
+.voice-btn-stop {
+    padding: 5px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    border: none;
+    background: #0084ff;
+    color: #ffffff;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.voice-btn-stop:hover {
+    background: #0070d6;
+}
+
+#voice-btn.recording {
+    color: #ff3b30;
+    animation: recordPulse 1.2s infinite ease-in-out;
+}
+
+/* Voice Preview Tray */
+.voice-preview-tray {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 14px;
+    background: rgba(18, 22, 32, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    margin: 4px 10px;
+    box-sizing: border-box;
+    animation: fadeInTray 0.2s ease-out;
+}
+
+.voice-preview-player {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.voice-preview-play-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #0084ff;
+    border: none;
+    color: #ffffff;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.voice-preview-play-btn:hover {
+    background: #0070d6;
+    transform: scale(1.05);
+}
+
+.voice-preview-play-btn.playing {
+    background: #ff9500;
+}
+
+.voice-preview-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.voice-preview-track {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 3px;
+    overflow: hidden;
+    cursor: pointer;
+    position: relative;
+}
+
+.voice-preview-fill {
+    height: 100%;
+    background: #0084ff;
+    border-radius: 3px;
+    transition: width 0.08s linear;
+}
+
+.voice-preview-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #aaaaaa;
+}
+
+.voice-preview-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* Chat Voice Message Card */
+.msg-voice-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    min-width: 210px;
+    max-width: 300px;
+    box-sizing: border-box;
+    margin-bottom: 2px;
+    user-select: none;
+}
+
+.msg.me .msg-voice-card {
+    background: rgba(0, 0, 0, 0.16);
+    border-color: rgba(255, 255, 255, 0.16);
+}
+
+.msg-voice-play-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: #0084ff;
+    border: none;
+    color: #ffffff;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.msg-voice-play-btn:hover {
+    background: #0070d6;
+    transform: scale(1.06);
+}
+
+.msg-voice-play-btn.playing {
+    background: #34c759;
+}
+
+.msg-voice-play-btn.loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.msg-voice-wave-wrap {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.msg-voice-progress-track {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+    overflow: hidden;
+    cursor: pointer;
+    position: relative;
+}
+
+.msg-voice-progress-fill {
+    height: 100%;
+    background: #0084ff;
+    border-radius: 3px;
+    transition: width 0.08s linear;
+}
+
+.msg.me .msg-voice-progress-fill {
+    background: #ffffff;
+}
+
+.msg-voice-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.msg-voice-time {
+    font-family: monospace, sans-serif;
+    font-weight: 600;
+}
+
+.msg-voice-label {
+    opacity: 0.8;
+}
+
+.msg-voice-actions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.msg-voice-btn.download {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    padding: 4px 6px;
+    font-size: 12px;
+    cursor: pointer;
+    color: #e0e0e0;
+    transition: background 0.15s ease;
+}
+
+.msg-voice-btn.download:hover {
+    background: rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+}
+
+
 

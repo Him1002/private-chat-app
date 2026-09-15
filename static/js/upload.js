@@ -419,4 +419,491 @@ function handleFileUpload(inputElement) {
     handleFileSelect(inputElement);
 }
 
+/* ==========================================================================
+   VOICE RECORDING & VOICE MESSAGE CONTROLLER (PHASE R4)
+   ========================================================================== */
+
+const CLIENT_MAX_VOICE_DURATION = 120; // 120 seconds / 2 minutes
+const CLIENT_MAX_VOICE_SIZE = 10 * 1024 * 1024; // 10 MB limit
+
+let voiceRecorder = null;
+let voiceStream = null;
+let voiceChunks = [];
+let voiceRecordStartTime = null;
+let voiceRecordTimerInterval = null;
+let voiceRecordedBlob = null;
+let voicePreviewBlobUrl = null;
+let voiceUploadXhr = null;
+let voiceUploadState = "idle"; // "idle" | "recording" | "previewing" | "uploading" | "failed"
+let voiceRecordedDuration = 0;
+
+function handleVoiceRecordButtonClick() {
+    if (voiceUploadState === "recording") {
+        stopVoiceRecording();
+        return;
+    }
+    if (voiceUploadState === "previewing" || voiceUploadState === "uploading") {
+        showToast("Finish or cancel current voice message first", "normal");
+        return;
+    }
+    startVoiceRecording();
+}
+
+function startVoiceRecording() {
+    if (!currentFriend) {
+        showToast("Select a chat first", "error");
+        return;
+    }
+
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+        showToast("Voice recording is not supported in this browser or requires HTTPS", "error");
+        return;
+    }
+
+    if (typeof window.MediaRecorder !== "function") {
+        showToast("Voice recording is not supported by your browser (MediaRecorder missing)", "error");
+        return;
+    }
+
+    // Stop any playing audio before recording
+    if (typeof stopAllPlayingAudios === "function") {
+        stopAllPlayingAudios();
+    }
+
+    navigator.mediaDevices.getUserMedia({ audio: true })
+        .then((stream) => {
+            voiceStream = stream;
+            beginMediaRecording(stream);
+        })
+        .catch((err) => {
+            console.error("Microphone access error:", err);
+            if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+                showToast("Microphone access was denied. Please allow microphone permissions in your browser.", "error");
+            } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+                showToast("No microphone found. Please connect a microphone and try again.", "error");
+            } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+                showToast("Microphone is currently unavailable or in use by another application.", "error");
+            } else {
+                showToast("Unable to access microphone: " + (err.message || "Unknown error"), "error");
+            }
+        });
+}
+
+function beginMediaRecording(stream) {
+    const candidateMimes = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/ogg;codecs=opus",
+        "audio/ogg",
+        "audio/mp4",
+        "audio/aac",
+        ""
+    ];
+    let selectedMime = "";
+    let options = {};
+    for (const mime of candidateMimes) {
+        if (!mime) break;
+        if (typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported(mime)) {
+            selectedMime = mime;
+            options = { mimeType: mime };
+            break;
+        }
+    }
+
+    try {
+        voiceRecorder = new MediaRecorder(stream, options);
+    } catch (e) {
+        try {
+            voiceRecorder = new MediaRecorder(stream);
+        } catch (err) {
+            showToast("Failed to initialize audio recorder: " + err.message, "error");
+            cleanupVoiceStream();
+            return;
+        }
+    }
+
+    voiceChunks = [];
+    voiceRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+            voiceChunks.push(event.data);
+        }
+    };
+
+    voiceRecorder.onstop = () => {
+        handleVoiceRecordStop();
+    };
+
+    voiceRecorder.onerror = (event) => {
+        console.error("MediaRecorder error:", event);
+        showToast("Recording error occurred", "error");
+        cancelVoiceRecording();
+    };
+
+    try {
+        voiceRecorder.start(250); // Slice every 250ms
+    } catch (err) {
+        showToast("Could not start audio recording: " + err.message, "error");
+        cleanupVoiceStream();
+        return;
+    }
+
+    voiceUploadState = "recording";
+    voiceRecordStartTime = Date.now();
+
+    // UI Updates
+    const recordBar = document.getElementById("voice-record-bar");
+    if (recordBar) recordBar.style.display = "flex";
+
+    const voiceBtn = document.getElementById("voice-btn");
+    if (voiceBtn) voiceBtn.classList.add("recording");
+
+    const timerEl = document.getElementById("voice-record-timer");
+    if (timerEl) timerEl.textContent = "0:00";
+
+    clearInterval(voiceRecordTimerInterval);
+    voiceRecordTimerInterval = setInterval(() => {
+        if (voiceUploadState !== "recording" || !voiceRecordStartTime) return;
+        const elapsed = Math.floor((Date.now() - voiceRecordStartTime) / 1000);
+        if (timerEl) timerEl.textContent = formatDuration(elapsed);
+
+        if (elapsed >= CLIENT_MAX_VOICE_DURATION) {
+            showToast(`Reached maximum voice duration of ${formatDuration(CLIENT_MAX_VOICE_DURATION)}`, "normal");
+            stopVoiceRecording();
+        }
+    }, 250);
+}
+
+function stopVoiceRecording() {
+    if (!voiceRecorder || voiceUploadState !== "recording") return;
+    clearInterval(voiceRecordTimerInterval);
+    voiceRecordTimerInterval = null;
+
+    try {
+        if (voiceRecorder.state !== "inactive") {
+            voiceRecorder.stop();
+        }
+    } catch (e) {
+        console.error("Error stopping recorder:", e);
+    }
+}
+
+function cancelVoiceRecording() {
+    clearInterval(voiceRecordTimerInterval);
+    voiceRecordTimerInterval = null;
+    voiceUploadState = "idle";
+
+    if (voiceRecorder) {
+        voiceRecorder.ondataavailable = null;
+        voiceRecorder.onstop = null;
+        try {
+            if (voiceRecorder.state !== "inactive") voiceRecorder.stop();
+        } catch (_) {}
+        voiceRecorder = null;
+    }
+    voiceChunks = [];
+    cleanupVoiceStream();
+
+    const recordBar = document.getElementById("voice-record-bar");
+    if (recordBar) recordBar.style.display = "none";
+
+    const voiceBtn = document.getElementById("voice-btn");
+    if (voiceBtn) voiceBtn.classList.remove("recording");
+}
+
+function cleanupVoiceStream() {
+    if (voiceStream) {
+        try {
+            voiceStream.getTracks().forEach((track) => track.stop());
+        } catch (_) {}
+        voiceStream = null;
+    }
+}
+
+function handleVoiceRecordStop() {
+    const elapsed = voiceRecordStartTime ? Math.max(1, Math.round((Date.now() - voiceRecordStartTime) / 1000)) : 1;
+    voiceRecordedDuration = elapsed;
+    cleanupVoiceStream();
+
+    const recordBar = document.getElementById("voice-record-bar");
+    if (recordBar) recordBar.style.display = "none";
+
+    const voiceBtn = document.getElementById("voice-btn");
+    if (voiceBtn) voiceBtn.classList.remove("recording");
+
+    const mime = (voiceRecorder && voiceRecorder.mimeType) || "audio/webm";
+    voiceRecordedBlob = new Blob(voiceChunks, { type: mime });
+    voiceChunks = [];
+    voiceRecorder = null;
+
+    if (!voiceRecordedBlob || voiceRecordedBlob.size === 0) {
+        showToast("Voice recording was empty", "error");
+        voiceUploadState = "idle";
+        return;
+    }
+
+    displayVoicePreview(voiceRecordedBlob, voiceRecordedDuration);
+}
+
+function displayVoicePreview(blob, duration) {
+    cleanupVoicePreviewBlobUrl();
+    voicePreviewBlobUrl = URL.createObjectURL(blob);
+    voiceUploadState = "previewing";
+
+    const previewTray = document.getElementById("voice-preview-tray");
+    const playBtn = document.getElementById("voice-preview-play-btn");
+    const fill = document.getElementById("voice-preview-fill");
+    const timeEl = document.getElementById("voice-preview-time");
+    const audio = document.getElementById("voice-preview-audio");
+    const progressTrack = document.getElementById("voice-upload-progress");
+    const progressFill = document.getElementById("voice-upload-fill");
+    const statusEl = document.getElementById("voice-upload-status");
+    const sendBtn = document.getElementById("voice-preview-send-btn");
+    const retryBtn = document.getElementById("voice-preview-retry-btn");
+    const cancelBtn = document.getElementById("voice-preview-cancel-btn");
+
+    if (playBtn) { playBtn.textContent = "▶"; playBtn.classList.remove("playing"); }
+    if (fill) fill.style.width = "0%";
+    if (timeEl) timeEl.textContent = `0:00 / ${formatDuration(duration)}`;
+    if (progressTrack) progressTrack.style.display = "none";
+    if (progressFill) progressFill.style.width = "0%";
+    if (statusEl) { statusEl.style.display = "none"; statusEl.textContent = ""; }
+    if (sendBtn) sendBtn.style.display = "inline-block";
+    if (retryBtn) retryBtn.style.display = "none";
+    if (cancelBtn) cancelBtn.style.display = "inline-block";
+
+    if (audio) {
+        audio.src = voicePreviewBlobUrl;
+        audio.currentTime = 0;
+
+        audio.ontimeupdate = () => {
+            if (!audio.duration || isNaN(audio.duration)) {
+                if (fill) fill.style.width = "0%";
+                return;
+            }
+            const pct = Math.min(100, Math.max(0, (audio.currentTime / (duration || audio.duration)) * 100));
+            if (fill) fill.style.width = `${pct}%`;
+            if (timeEl) timeEl.textContent = `${formatDuration(audio.currentTime)} / ${formatDuration(duration || audio.duration)}`;
+        };
+
+        audio.onended = () => {
+            if (playBtn) { playBtn.textContent = "▶"; playBtn.classList.remove("playing"); }
+            if (fill) fill.style.width = "0%";
+            if (timeEl) timeEl.textContent = `0:00 / ${formatDuration(duration)}`;
+            audio.currentTime = 0;
+        };
+
+        audio.onpause = () => {
+            if (playBtn) { playBtn.textContent = "▶"; playBtn.classList.remove("playing"); }
+        };
+
+        audio.onplay = () => {
+            if (playBtn) { playBtn.textContent = "⏸"; playBtn.classList.add("playing"); }
+        };
+    }
+
+    if (previewTray) previewTray.style.display = "flex";
+}
+
+function toggleVoicePreviewPlayback() {
+    const audio = document.getElementById("voice-preview-audio");
+    if (!audio) return;
+    if (audio.paused) {
+        if (typeof stopAllPlayingAudios === "function") {
+            stopAllPlayingAudios();
+        }
+        audio.play().catch((e) => console.error("Error playing voice preview:", e));
+    } else {
+        audio.pause();
+    }
+}
+
+function seekVoicePreview(event) {
+    const audio = document.getElementById("voice-preview-audio");
+    const track = document.getElementById("voice-preview-track");
+    if (!audio || !track) return;
+    const rect = track.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const ratio = Math.max(0, Math.min(1, clickX / rect.width));
+    const totalDuration = voiceRecordedDuration || audio.duration || 0;
+    if (totalDuration > 0) {
+        audio.currentTime = ratio * totalDuration;
+    }
+}
+
+function startVoiceUpload() {
+    if (!voiceRecordedBlob || voiceUploadState === "uploading") return;
+    if (!currentFriend) {
+        showToast("Select a chat first", "error");
+        cancelVoicePreview();
+        return;
+    }
+
+    const audio = document.getElementById("voice-preview-audio");
+    if (audio && !audio.paused) {
+        audio.pause();
+    }
+
+    voiceUploadState = "uploading";
+
+    const progressTrack = document.getElementById("voice-upload-progress");
+    const progressFill = document.getElementById("voice-upload-fill");
+    const statusEl = document.getElementById("voice-upload-status");
+    const sendBtn = document.getElementById("voice-preview-send-btn");
+    const retryBtn = document.getElementById("voice-preview-retry-btn");
+
+    if (progressTrack) progressTrack.style.display = "block";
+    if (progressFill) progressFill.style.width = "0%";
+    if (statusEl) {
+        statusEl.textContent = "Uploading (0%)...";
+        statusEl.style.display = "block";
+    }
+    if (sendBtn) sendBtn.style.display = "none";
+    if (retryBtn) retryBtn.style.display = "none";
+
+    let ext = "webm";
+    const typeLower = (voiceRecordedBlob.type || "").toLowerCase();
+    if (typeLower.includes("ogg")) ext = "ogg";
+    else if (typeLower.includes("mp4") || typeLower.includes("aac")) ext = "m4a";
+    else if (typeLower.includes("wav")) ext = "wav";
+    else if (typeLower.includes("mp3") || typeLower.includes("mpeg")) ext = "mp3";
+
+    const filename = `voice_${Date.now()}.${ext}`;
+    const formData = new FormData();
+    formData.append("file", voiceRecordedBlob, filename);
+
+    const xhr = new XMLHttpRequest();
+    voiceUploadXhr = xhr;
+
+    xhr.open("POST", "/upload");
+    if (token) {
+        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    }
+
+    xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+            const percent = Math.min(100, Math.round((e.loaded / e.total) * 100));
+            if (progressFill) progressFill.style.width = `${percent}%`;
+            if (statusEl) statusEl.textContent = `Uploading (${percent}%)...`;
+        }
+    };
+
+    xhr.onload = () => {
+        voiceUploadXhr = null;
+        if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+                const data = JSON.parse(xhr.responseText);
+                if (data && data.url) {
+                    // Seed media cache with local preview blob for instantaneous zero-latency playback
+                    if (typeof seedSecureMediaCache === "function" && voicePreviewBlobUrl) {
+                        seedSecureMediaCache(data.url, voicePreviewBlobUrl);
+                    }
+
+                    const payload = {
+                        type: "chat",
+                        room: currentFriend,
+                        text: "",
+                        voice_url: data.url,
+                    };
+                    if (typeof activeReplyTarget !== "undefined" && activeReplyTarget) {
+                        payload.reply_to_message_id = activeReplyTarget.messageId;
+                    }
+                    const sent = sendSocketPayload(payload);
+                    if (!sent) {
+                        showToast("Reconnecting chat...", "normal");
+                    }
+                    if (typeof cancelReplyMode === "function") {
+                        cancelReplyMode(true);
+                    }
+
+                    closeVoicePreviewTray();
+                    return;
+                }
+            } catch (err) {
+                console.error("Failed to parse upload response:", err);
+            }
+            handleVoiceUploadError("Upload failed");
+        } else if (xhr.status === 413) {
+            handleVoiceUploadError("Voice file exceeds size limit");
+        } else if (xhr.status === 415) {
+            handleVoiceUploadError("Unsupported voice format");
+        } else if (xhr.status === 400) {
+            handleVoiceUploadError("Voice duration exceeds limit");
+        } else {
+            handleVoiceUploadError("Upload failed");
+        }
+    };
+
+    xhr.onerror = () => {
+        voiceUploadXhr = null;
+        handleVoiceUploadError("Network error during voice upload");
+    };
+
+    xhr.onabort = () => {
+        voiceUploadXhr = null;
+        cancelVoicePreview();
+    };
+
+    xhr.send(formData);
+}
+
+function handleVoiceUploadError(errorMsg) {
+    voiceUploadState = "failed";
+    const statusEl = document.getElementById("voice-upload-status");
+    const retryBtn = document.getElementById("voice-preview-retry-btn");
+    const sendBtn = document.getElementById("voice-preview-send-btn");
+    const progressTrack = document.getElementById("voice-upload-progress");
+
+    if (statusEl) {
+        statusEl.textContent = errorMsg;
+        statusEl.style.display = "block";
+    }
+    if (retryBtn) retryBtn.style.display = "inline-block";
+    if (sendBtn) sendBtn.style.display = "none";
+    if (progressTrack) progressTrack.style.display = "none";
+    showToast(errorMsg, "error");
+}
+
+function retryVoiceUpload() {
+    startVoiceUpload();
+}
+
+function closeVoicePreviewTray() {
+    voiceUploadState = "idle";
+    voiceRecordedBlob = null;
+    const tray = document.getElementById("voice-preview-tray");
+    if (tray) tray.style.display = "none";
+}
+
+function cancelVoicePreview() {
+    if (voiceUploadXhr) {
+        try { voiceUploadXhr.abort(); } catch (_) {}
+        voiceUploadXhr = null;
+    }
+    const audio = document.getElementById("voice-preview-audio");
+    if (audio) {
+        audio.pause();
+        audio.src = "";
+    }
+    cleanupVoicePreviewBlobUrl();
+    voiceRecordedBlob = null;
+    voiceUploadState = "idle";
+
+    const tray = document.getElementById("voice-preview-tray");
+    if (tray) tray.style.display = "none";
+}
+
+function cleanupVoicePreviewBlobUrl() {
+    if (voicePreviewBlobUrl) {
+        try { URL.revokeObjectURL(voicePreviewBlobUrl); } catch (_) {}
+        voicePreviewBlobUrl = null;
+    }
+}
+
+// Global cleanup on page unload / beforeunload
+window.addEventListener("beforeunload", () => {
+    cancelVoiceRecording();
+    cancelVoicePreview();
+});
+
+
 

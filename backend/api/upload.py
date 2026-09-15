@@ -134,7 +134,7 @@ async def get_uploaded_file(
         is_download = (download == 1) or (ext in DOWNLOAD_ONLY_EXTENSIONS)
         if is_download:
             headers["Content-Disposition"] = f'attachment; filename="{safe_ascii}"; filename*=UTF-8\'\'{rfc5987_val}'
-        elif ext in {"pdf", "txt", "json"}:
+        elif ext in {"pdf", "txt", "json", "ogg", "mp3", "wav", "m4a", "aac", "webm", "mp4"}:
             headers["Content-Disposition"] = f'inline; filename="{safe_ascii}"; filename*=UTF-8\'\'{rfc5987_val}'
 
         # Canonical Content-Type resolution
@@ -155,9 +155,21 @@ async def get_uploaded_file(
         elif ext == "mp4":
             content_type = "video/mp4"
         elif ext == "webm":
-            content_type = "video/webm"
+            if (meta and meta.get("is_voice")) or base_filename.startswith("voice_"):
+                content_type = "audio/webm"
+            else:
+                content_type = "video/webm"
+        elif ext == "ogg":
+            content_type = "audio/ogg"
+        elif ext == "mp3":
+            content_type = "audio/mpeg"
+        elif ext == "wav":
+            content_type = "audio/wav"
+        elif ext in {"m4a", "aac"}:
+            content_type = "audio/mp4"
         else:
             content_type, _ = mimetypes.guess_type(file_path)
+
 
         return FileResponse(
             file_path,

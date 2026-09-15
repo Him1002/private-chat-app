@@ -105,6 +105,8 @@ class Settings:
         MAX_VIDEO_SIZE_BYTES: Optional[Union[int, str]] = None,
         MAX_VIDEO_DURATION_SECONDS: Optional[Union[int, str]] = None,
         MAX_FILE_SIZE_BYTES: Optional[Union[int, str]] = None,
+        MAX_VOICE_SIZE_BYTES: Optional[Union[int, str]] = None,
+        MAX_VOICE_DURATION_SECONDS: Optional[Union[int, str]] = None,
     ):
         if _env_file is not None:
             if os.path.exists(_env_file):
@@ -268,6 +270,29 @@ class Settings:
         except (ValueError, TypeError):
             self.MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
 
+        # Rich media voice message upload limit (Phase R4: default 10 MB)
+        raw_max_voice = (
+            MAX_VOICE_SIZE_BYTES
+            if MAX_VOICE_SIZE_BYTES is not None
+            else os.getenv("MAX_VOICE_SIZE_BYTES", str(10 * 1024 * 1024))
+        )
+        try:
+            self.MAX_VOICE_SIZE_BYTES: int = max(1024, int(raw_max_voice))
+        except (ValueError, TypeError):
+            self.MAX_VOICE_SIZE_BYTES = 10 * 1024 * 1024
+
+        # Rich media voice message duration limit (Phase R4: default 120 seconds / 2 minutes)
+        raw_max_voice_duration = (
+            MAX_VOICE_DURATION_SECONDS
+            if MAX_VOICE_DURATION_SECONDS is not None
+            else os.getenv("MAX_VOICE_DURATION_SECONDS", "120")
+        )
+        try:
+            self.MAX_VOICE_DURATION_SECONDS: int = max(1, int(raw_max_voice_duration))
+        except (ValueError, TypeError):
+            self.MAX_VOICE_DURATION_SECONDS = 120
+
+
     @property
     def is_production(self) -> bool:
         """Return True if running in production mode."""
@@ -333,7 +358,9 @@ class Settings:
             f"MAX_IMAGE_SIZE_BYTES={self.MAX_IMAGE_SIZE_BYTES!r}, "
             f"MAX_VIDEO_SIZE_BYTES={self.MAX_VIDEO_SIZE_BYTES!r}, "
             f"MAX_VIDEO_DURATION_SECONDS={self.MAX_VIDEO_DURATION_SECONDS!r}, "
-            f"MAX_FILE_SIZE_BYTES={self.MAX_FILE_SIZE_BYTES!r})"
+            f"MAX_FILE_SIZE_BYTES={self.MAX_FILE_SIZE_BYTES!r}, "
+            f"MAX_VOICE_SIZE_BYTES={self.MAX_VOICE_SIZE_BYTES!r}, "
+            f"MAX_VOICE_DURATION_SECONDS={self.MAX_VOICE_DURATION_SECONDS!r})"
         )
 
     def __str__(self) -> str:

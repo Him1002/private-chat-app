@@ -552,6 +552,14 @@ async def websocket_endpoint(websocket: WebSocket,
                     }))
                     continue
 
+                voice_url = data.get("voice_url") or data.get("audio_url")
+                if voice_url is not None and not isinstance(voice_url, str):
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Voice URL must be a string",
+                    }))
+                    continue
+
                 reply_to_id = data.get("reply_to_message_id")
 
                 try:
@@ -582,6 +590,7 @@ async def websocket_endpoint(websocket: WebSocket,
                         video_url=vid_url,
                         file_url=file_url,
                         file_name=file_name,
+                        voice_url=voice_url,
                         reply_to_message_id=parsed_reply_to,
                     )
                 except chat_service.BadRequestError as exc:

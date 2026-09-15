@@ -118,7 +118,8 @@ function handleSocketMessage(e) {
                 data.file_url,
                 data.file_name,
                 data.file_size,
-                data.media_type
+                data.media_type,
+                data.voice_url || data.audio_url
             );
         } else if (typeof loadSidebar === "function") {
             loadSidebar();

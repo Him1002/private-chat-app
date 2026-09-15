@@ -435,7 +435,7 @@ function isMessageDeleted(messageEl) {
 
 function canEditMessage(messageEl) {
     if (!messageEl || !messageEl.classList.contains("me") || isMessageDeleted(messageEl)) return false;
-    if (messageEl.dataset.fileUrl || messageEl.dataset.videoUrl || messageEl.dataset.imageUrl || messageEl.dataset.mediaType === "file") {
+    if (messageEl.dataset.voiceUrl || messageEl.dataset.fileUrl || messageEl.dataset.videoUrl || messageEl.dataset.imageUrl || messageEl.dataset.mediaType === "voice" || messageEl.dataset.mediaType === "file") {
         return false;
     }
     const messageText = (messageEl.dataset.text || "").trim();
@@ -460,6 +460,13 @@ function applyDeletedState(messageEl, deletedAt) {
 
     const videoEl = messageEl.querySelector("video");
     if (videoEl) videoEl.remove();
+
+    const voiceEl = messageEl.querySelector(".msg-voice-card");
+    if (voiceEl) {
+        const audio = voiceEl.querySelector("audio");
+        if (audio) { audio.pause(); audio.src = ""; }
+        voiceEl.remove();
+    }
 
     const fileEl = messageEl.querySelector(".msg-file-card");
     if (fileEl) fileEl.remove();
@@ -546,7 +553,9 @@ function enterReplyMode(messageEl) {
     const senderName = messageEl.querySelector(".sender-name");
     const sender = messageEl.classList.contains("me") ? "You" : (senderName ? senderName.textContent : "");
     let mediaPlaceholder = "";
-    if (messageEl.dataset.fileUrl || messageEl.dataset.mediaType === "file") {
+    if (messageEl.dataset.voiceUrl || messageEl.dataset.mediaType === "voice") {
+        mediaPlaceholder = "🎙️ Voice message";
+    } else if (messageEl.dataset.fileUrl || messageEl.dataset.mediaType === "file") {
         mediaPlaceholder = `📎 ${messageEl.dataset.fileName || "File"}`;
     } else if (messageEl.dataset.videoUrl) {
         mediaPlaceholder = "🎥 Video";
@@ -555,7 +564,9 @@ function enterReplyMode(messageEl) {
         mediaPlaceholder = (urlLower.endsWith(".mp4") || urlLower.endsWith(".webm")) ? "🎥 Video" : "📷 Photo";
     }
     let content = isDeleted ? "This message was deleted" : (messageEl.dataset.text || mediaPlaceholder);
-    if (!isDeleted && (messageEl.dataset.fileUrl || messageEl.dataset.mediaType === "file")) {
+    if (!isDeleted && (messageEl.dataset.voiceUrl || messageEl.dataset.mediaType === "voice")) {
+        content = mediaPlaceholder;
+    } else if (!isDeleted && (messageEl.dataset.fileUrl || messageEl.dataset.mediaType === "file")) {
         content = mediaPlaceholder;
     }
 
@@ -900,6 +911,36 @@ function handleLightboxKeyDown(event) {
     }
 }
 
+function isVoiceUrl(url) {
+    if (!url || typeof url !== "string") return false;
+    const clean = url.split("?")[0].toLowerCase();
+    const base = clean.split("/").pop();
+    if (base.startsWith("voice_") || base.includes("voice")) return true;
+    const voiceExts = [".ogg", ".mp3", ".wav", ".m4a", ".aac"];
+    return voiceExts.some(ext => clean.endsWith(ext));
+}
+
+function stopAllPlayingAudios() {
+    document.querySelectorAll(".msg-voice-audio").forEach(audio => {
+        if (!audio.paused) {
+            audio.pause();
+        }
+    });
+    document.querySelectorAll(".msg-voice-play-btn").forEach(btn => {
+        btn.textContent = "▶";
+        btn.classList.remove("playing");
+    });
+    const previewAudio = document.getElementById("voice-preview-audio");
+    if (previewAudio && !previewAudio.paused) {
+        previewAudio.pause();
+    }
+    const previewPlayBtn = document.getElementById("voice-preview-play-btn");
+    if (previewPlayBtn) {
+        previewPlayBtn.textContent = "▶";
+        previewPlayBtn.classList.remove("playing");
+    }
+}
+
 function isDocumentUrl(url) {
     if (!url || typeof url !== "string") return false;
     const clean = url.split("?")[0].toLowerCase();
@@ -968,18 +1009,20 @@ async function downloadSecureFile(url, fileName) {
     }
 }
 
-function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "", reactions = null, replyTo = null, videoUrl = null, fileUrl = null, fileName = null, fileSize = null, mediaType = null) {
+function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "", reactions = null, replyTo = null, videoUrl = null, fileUrl = null, fileName = null, fileSize = null, mediaType = null, voiceUrl = null) {
     const box = document.getElementById("messages");
     const isMe = sender === currentUser;
     const deleted = Boolean(isDeleted || text === "This message was deleted");
     const safeText = deleted ? "This message was deleted" : (text || "");
 
-    // Resolve media: document, video, or image
-    const rawMedia = fileUrl || videoUrl || imageUrl || "";
-    const isDoc = (mediaType === "file") || Boolean(fileUrl) || (rawMedia && isDocumentUrl(rawMedia));
-    const isVideo = !isDoc && (mediaType === "video" || Boolean(videoUrl) || (rawMedia && (rawMedia.toLowerCase().endsWith(".mp4") || rawMedia.toLowerCase().endsWith(".webm"))));
-    const isImg = !isDoc && !isVideo && (mediaType === "image" || Boolean(imageUrl) || (rawMedia && !rawMedia.toLowerCase().endsWith(".mp4") && !rawMedia.toLowerCase().endsWith(".webm")));
+    // Resolve media: voice, document, video, or image
+    const rawMedia = voiceUrl || fileUrl || videoUrl || imageUrl || "";
+    const isVoice = (mediaType === "voice") || Boolean(voiceUrl) || (rawMedia && isVoiceUrl(rawMedia));
+    const isDoc = !isVoice && ((mediaType === "file") || Boolean(fileUrl) || (rawMedia && isDocumentUrl(rawMedia)));
+    const isVideo = !isVoice && !isDoc && (mediaType === "video" || Boolean(videoUrl) || (rawMedia && (rawMedia.toLowerCase().endsWith(".mp4") || rawMedia.toLowerCase().endsWith(".webm"))));
+    const isImg = !isVoice && !isDoc && !isVideo && (mediaType === "image" || Boolean(imageUrl) || (rawMedia && !rawMedia.toLowerCase().endsWith(".mp4") && !rawMedia.toLowerCase().endsWith(".webm")));
 
+    const safeVoiceUrl = deleted ? "" : (isVoice ? rawMedia : "");
     const safeVideoUrl = deleted ? "" : (isVideo ? rawMedia : "");
     const safeImageUrl = deleted ? "" : (isImg ? rawMedia : "");
     const safeFileUrl = deleted ? "" : (isDoc ? rawMedia : "");
@@ -993,8 +1036,9 @@ function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messag
     div.dataset.imageUrl = safeImageUrl;
     div.dataset.videoUrl = safeVideoUrl;
     div.dataset.fileUrl = safeFileUrl;
+    div.dataset.voiceUrl = safeVoiceUrl;
     div.dataset.fileName = safeFileName;
-    div.dataset.mediaType = isDoc ? "file" : (isVideo ? "video" : (isImg ? "image" : "text"));
+    div.dataset.mediaType = isVoice ? "voice" : (isDoc ? "file" : (isVideo ? "video" : (isImg ? "image" : "text")));
     div.dataset.status = normalizeMessageStatus(status, status === "read");
     div.dataset.editedAt = editedAt || "";
     div.dataset.isDeleted = deleted ? "true" : "false";
@@ -1027,12 +1071,164 @@ function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messag
         }
     }
 
-    // 3. Media image / video / document with secure authenticated loading
+    // 3. Media voice / image / video / document with secure authenticated loading
     const validatedImageUrl = sanitizeMediaUrl(safeImageUrl);
     const validatedVideoUrl = sanitizeMediaUrl(safeVideoUrl);
     const validatedFileUrl = sanitizeMediaUrl(safeFileUrl);
+    const validatedVoiceUrl = sanitizeMediaUrl(safeVoiceUrl);
 
-    if (!deleted && validatedImageUrl) {
+    if (!deleted && validatedVoiceUrl) {
+        const voiceCard = document.createElement("div");
+        voiceCard.className = "msg-voice-card";
+
+        const playBtn = document.createElement("button");
+        playBtn.type = "button";
+        playBtn.className = "msg-voice-play-btn";
+        playBtn.textContent = "▶";
+        playBtn.title = "Play voice message";
+        playBtn.setAttribute("aria-label", "Play voice message");
+
+        const waveWrap = document.createElement("div");
+        waveWrap.className = "msg-voice-wave-wrap";
+
+        const progressTrack = document.createElement("div");
+        progressTrack.className = "msg-voice-progress-track";
+
+        const progressFill = document.createElement("div");
+        progressFill.className = "msg-voice-progress-fill";
+        progressFill.style.width = "0%";
+        progressTrack.appendChild(progressFill);
+
+        const metaRow = document.createElement("div");
+        metaRow.className = "msg-voice-meta-row";
+
+        const timeSpan = document.createElement("span");
+        timeSpan.className = "msg-voice-time";
+        timeSpan.textContent = "0:00";
+
+        const labelSpan = document.createElement("span");
+        labelSpan.className = "msg-voice-label";
+        labelSpan.textContent = "🎙️ Voice";
+
+        metaRow.appendChild(timeSpan);
+        metaRow.appendChild(labelSpan);
+
+        waveWrap.appendChild(progressTrack);
+        waveWrap.appendChild(metaRow);
+
+        const actionsDiv = document.createElement("div");
+        actionsDiv.className = "msg-voice-actions";
+
+        const downloadBtn = document.createElement("button");
+        downloadBtn.type = "button";
+        downloadBtn.className = "msg-voice-btn download";
+        downloadBtn.textContent = "💾";
+        downloadBtn.title = "Download voice message";
+        downloadBtn.setAttribute("aria-label", "Download voice message");
+        downloadBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const ext = validatedVoiceUrl.split("?")[0].split(".").pop() || "webm";
+            downloadSecureFile(validatedVoiceUrl, `voice_message.${ext}`);
+        });
+        actionsDiv.appendChild(downloadBtn);
+
+        const audio = document.createElement("audio");
+        audio.className = "msg-voice-audio";
+        audio.preload = "metadata";
+        audio.style.display = "none";
+
+        let audioLoaded = false;
+        const ensureAudioSource = async () => {
+            if (audioLoaded && audio.src) return true;
+            if (typeof secureMediaCache !== "undefined" && secureMediaCache.has(validatedVoiceUrl)) {
+                audio.src = secureMediaCache.get(validatedVoiceUrl);
+                audioLoaded = true;
+                return true;
+            }
+            if (typeof fetchSecureMediaBlobUrl === "function") {
+                playBtn.classList.add("loading");
+                try {
+                    const blobUrl = await fetchSecureMediaBlobUrl(validatedVoiceUrl);
+                    if (blobUrl) {
+                        audio.src = blobUrl;
+                        audioLoaded = true;
+                        playBtn.classList.remove("loading");
+                        return true;
+                    }
+                } catch (e) {
+                    playBtn.classList.remove("loading");
+                    showToast("Failed to load voice message", "normal");
+                    return false;
+                }
+            }
+            audio.src = validatedVoiceUrl;
+            audioLoaded = true;
+            return true;
+        };
+
+        playBtn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            if (audio.paused) {
+                stopAllPlayingAudios();
+                const ready = await ensureAudioSource();
+                if (ready) {
+                    audio.play().catch(err => console.error("Voice playback error:", err));
+                }
+            } else {
+                audio.pause();
+            }
+        });
+
+        progressTrack.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const ready = await ensureAudioSource();
+            if (!ready) return;
+            const rect = progressTrack.getBoundingClientRect();
+            const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            if (audio.duration && !isNaN(audio.duration)) {
+                audio.currentTime = ratio * audio.duration;
+            }
+        });
+
+        audio.onplay = () => {
+            playBtn.textContent = "⏸";
+            playBtn.classList.add("playing");
+        };
+
+        audio.onpause = () => {
+            playBtn.textContent = "▶";
+            playBtn.classList.remove("playing");
+        };
+
+        audio.ontimeupdate = () => {
+            if (!audio.duration || isNaN(audio.duration)) return;
+            const pct = Math.min(100, (audio.currentTime / audio.duration) * 100);
+            progressFill.style.width = `${pct}%`;
+            timeSpan.textContent = `${formatDuration(audio.currentTime)} / ${formatDuration(audio.duration)}`;
+        };
+
+        audio.onloadedmetadata = () => {
+            if (audio.duration && !isNaN(audio.duration)) {
+                timeSpan.textContent = formatDuration(audio.duration);
+            }
+        };
+
+        audio.onended = () => {
+            playBtn.textContent = "▶";
+            playBtn.classList.remove("playing");
+            progressFill.style.width = "0%";
+            if (audio.duration && !isNaN(audio.duration)) {
+                timeSpan.textContent = formatDuration(audio.duration);
+            }
+            audio.currentTime = 0;
+        };
+
+        voiceCard.appendChild(playBtn);
+        voiceCard.appendChild(waveWrap);
+        voiceCard.appendChild(actionsDiv);
+        voiceCard.appendChild(audio);
+        div.appendChild(voiceCard);
+    } else if (!deleted && validatedImageUrl) {
         const imgEl = document.createElement("img");
         imgEl.alt = "message image";
         imgEl.className = "msg-image loading";
@@ -1181,7 +1377,8 @@ function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messag
     // 4. Message text
     if (safeText) {
         const isDocDuplicateText = isDoc && !deleted && (safeText === safeFileName || safeText === safeFileUrl);
-        if (!isDocDuplicateText) {
+        const isVoiceDuplicateText = isVoice && !deleted && (safeText === "🎙️ Voice message" || safeText === safeVoiceUrl || safeText.trim() === "");
+        if (!isDocDuplicateText && !isVoiceDuplicateText) {
             const textEl = document.createElement("span");
             textEl.className = "msg-text";
             textEl.textContent = safeText;

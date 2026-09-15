@@ -385,6 +385,44 @@
             </div>
         </div>
 
+        <div id="voice-record-bar" class="voice-record-bar" style="display: none;">
+            <div class="voice-record-indicator">
+                <span class="voice-record-pulse"></span>
+                <span class="voice-record-label">Recording</span>
+                <span id="voice-record-timer" class="voice-record-timer">0:00</span>
+                <span class="voice-record-limit">(max 2:00)</span>
+            </div>
+            <div class="voice-record-actions">
+                <button id="voice-cancel-btn" type="button" class="voice-btn-cancel" onclick="cancelVoiceRecording()" title="Cancel recording">Cancel</button>
+                <button id="voice-stop-btn" type="button" class="voice-btn-stop" onclick="stopVoiceRecording()" title="Stop and preview">Done</button>
+            </div>
+        </div>
+
+        <div id="voice-preview-tray" class="voice-preview-tray" style="display: none;">
+            <div class="voice-preview-player">
+                <button id="voice-preview-play-btn" type="button" class="voice-preview-play-btn" onclick="toggleVoicePreviewPlayback()" title="Play / Pause preview">▶</button>
+                <div class="voice-preview-info">
+                    <div id="voice-preview-track" class="voice-preview-track" onclick="seekVoicePreview(event)">
+                        <div id="voice-preview-fill" class="voice-preview-fill" style="width: 0%;"></div>
+                    </div>
+                    <div class="voice-preview-meta">
+                        <span id="voice-preview-time" class="voice-preview-time">0:00 / 0:00</span>
+                        <span class="voice-preview-name">Voice note</span>
+                    </div>
+                </div>
+                <audio id="voice-preview-audio" preload="metadata" style="display: none;"></audio>
+            </div>
+            <div id="voice-upload-progress" class="media-progress-track" style="display: none;">
+                <div id="voice-upload-fill" class="media-progress-fill" style="width: 0%;"></div>
+            </div>
+            <div id="voice-upload-status" class="media-preview-status" style="display: none;"></div>
+            <div class="voice-preview-actions">
+                <button id="voice-preview-retry-btn" type="button" class="media-preview-btn retry" style="display: none;" onclick="retryVoiceUpload()" title="Retry upload">Retry</button>
+                <button id="voice-preview-send-btn" type="button" class="media-preview-btn send" onclick="startVoiceUpload()" title="Send voice message">Send</button>
+                <button id="voice-preview-cancel-btn" type="button" class="media-preview-btn cancel" onclick="cancelVoicePreview()" title="Discard voice message">&times;</button>
+            </div>
+        </div>
+
         <div class="input-area">
             <input type="file" id="input-gallery" style="display: none;" accept="image/*,video/mp4,video/webm" onchange="handleFileSelect(this)">
             <input type="file" id="input-camera" style="display: none;" accept="image/*" capture="environment" onchange="handleFileSelect(this)">
@@ -409,7 +447,7 @@
             </div>
 
             <button class="icon-btn" id="camera-btn" type="button" onclick="openCameraPicker()" title="Camera">📷</button>
-            <button class="icon-btn" id="voice-btn" type="button" title="Voice">🎙️</button>
+            <button class="icon-btn" id="voice-btn" type="button" onclick="handleVoiceRecordButtonClick()" title="Voice">🎙️</button>
             
             <button id="send-btn" type="button" onclick="send()" disabled>&#10148;</button>
         </div>

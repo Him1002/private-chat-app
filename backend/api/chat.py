@@ -17,6 +17,8 @@ class MessageCreate(BaseModel):
     text: Optional[str] = None
     image_url: Optional[str] = None
     video_url: Optional[str] = None
+    file_url: Optional[str] = None
+    file_name: Optional[str] = None
     reply_to_message_id: Optional[int] = None
 
 
@@ -73,6 +75,8 @@ async def send_message(
             data.text,
             data.image_url,
             video_url=data.video_url,
+            file_url=data.file_url,
+            file_name=data.file_name,
             reply_to_message_id=data.reply_to_message_id,
         )
     except chat_service.NotFoundError as e:

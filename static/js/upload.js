@@ -5,9 +5,11 @@ let currentUploadXhr = null;
 
 const CLIENT_MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB limit
 const CLIENT_MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50 MB limit
+const CLIENT_MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB limit
 const CLIENT_MAX_VIDEO_DURATION = 120; // 120 seconds / 2 minutes
 const ALLOWED_IMAGE_MIMES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 const ALLOWED_VIDEO_MIMES = ["video/mp4", "video/webm"];
+const ALLOWED_DOCUMENT_EXTS = ["pdf", "txt", "csv", "json", "docx", "xlsx", "pptx"];
 
 function formatDuration(seconds) {
     if (!seconds || isNaN(seconds) || seconds < 0) return "0:00";
@@ -16,6 +18,68 @@ function formatDuration(seconds) {
     const secs = totalSec % 60;
     return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
 }
+
+function getDocTypeDetails(fileName) {
+    const ext = (fileName || "").toLowerCase().split(".").pop();
+    switch (ext) {
+        case "pdf": return { icon: "📄", badge: "PDF", name: "PDF Document" };
+        case "docx": return { icon: "📝", badge: "DOCX", name: "Word Document" };
+        case "xlsx": return { icon: "📊", badge: "XLSX", name: "Excel Sheet" };
+        case "pptx": return { icon: "📽️", badge: "PPTX", name: "PowerPoint" };
+        case "csv": return { icon: "📊", badge: "CSV", name: "CSV Data" };
+        case "json": return { icon: "⚙️", badge: "JSON", name: "JSON Data" };
+        case "txt": return { icon: "📄", badge: "TXT", name: "Text Document" };
+        default: return { icon: "📎", badge: ext.toUpperCase() || "FILE", name: "File" };
+    }
+}
+
+/* --- ATTACHMENT POPUP CONTROLS --- */
+function closeAttachMenu() {
+    const menu = document.getElementById("attach-menu");
+    if (menu) menu.style.display = "none";
+}
+
+function toggleAttachMenu(event) {
+    if (event) event.stopPropagation();
+    const menu = document.getElementById("attach-menu");
+    if (!menu) return;
+    menu.style.display = (menu.style.display === "none" || !menu.style.display) ? "flex" : "none";
+}
+
+function openGalleryPicker() {
+    closeAttachMenu();
+    const input = document.getElementById("input-gallery");
+    if (input) input.click();
+}
+
+function openDocumentPicker() {
+    closeAttachMenu();
+    const input = document.getElementById("input-document");
+    if (input) input.click();
+}
+
+function openCameraPicker() {
+    closeAttachMenu();
+    const input = document.getElementById("input-camera");
+    if (input) input.click();
+}
+
+// Global click & escape listeners to ensure popup closes per Clarification 5
+document.addEventListener("click", (event) => {
+    const attachMenu = document.getElementById("attach-menu");
+    const attachBtn = document.getElementById("attach-btn");
+    if (attachMenu && attachMenu.style.display !== "none") {
+        if (!attachMenu.contains(event.target) && !attachBtn.contains(event.target)) {
+            closeAttachMenu();
+        }
+    }
+});
+
+window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+        closeAttachMenu();
+    }
+});
 
 function handleFileSelect(inputElement) {
     if (!inputElement || !inputElement.files || inputElement.files.length === 0) return;
@@ -28,11 +92,13 @@ function handleFileSelect(inputElement) {
     }
 
     const fileNameLower = (file.name || "").toLowerCase();
+    const fileExt = fileNameLower.split(".").pop();
     const isVideo = (file.type && file.type.startsWith("video/")) ||
                     fileNameLower.endsWith(".mp4") ||
                     fileNameLower.endsWith(".webm");
+    const isDoc = ALLOWED_DOCUMENT_EXTS.includes(fileExt);
 
-    // Pre-validation: size & MIME limits
+    // Pre-validation: size & MIME / extension limits
     if (isVideo) {
         if (file.size > CLIENT_MAX_VIDEO_SIZE) {
             showToast("Video exceeds 50 MB limit", "error");
@@ -41,6 +107,12 @@ function handleFileSelect(inputElement) {
         }
         if (file.type && !ALLOWED_VIDEO_MIMES.includes(file.type)) {
             showToast("Unsupported video format (MP4 and WebM supported)", "error");
+            inputElement.value = "";
+            return;
+        }
+    } else if (isDoc) {
+        if (file.size > CLIENT_MAX_FILE_SIZE) {
+            showToast("File exceeds 25 MB limit", "error");
             inputElement.value = "";
             return;
         }
@@ -75,22 +147,23 @@ function handleFileSelect(inputElement) {
                 showToast(`Video exceeds 2-minute duration limit (${formatDuration(duration)})`, "error");
                 return;
             }
-            displayMediaPreview(file, true, duration);
+            displayMediaPreview(file, true, duration, false);
         };
 
         tempVideo.onerror = () => {
             URL.revokeObjectURL(tempBlobUrl);
-            // If duration metadata extraction fails (e.g. partial container), still allow preview
-            displayMediaPreview(file, true, null);
+            displayMediaPreview(file, true, null, false);
         };
 
         tempVideo.src = tempBlobUrl;
+    } else if (isDoc) {
+        displayMediaPreview(file, false, null, true);
     } else {
-        displayMediaPreview(file, false, null);
+        displayMediaPreview(file, false, null, false);
     }
 }
 
-function displayMediaPreview(file, isVideo, duration) {
+function displayMediaPreview(file, isVideo, duration, isDoc = false) {
     currentUploadFile = file;
     currentUploadPreviewUrl = URL.createObjectURL(file);
     currentUploadState = "previewing";
@@ -98,6 +171,7 @@ function displayMediaPreview(file, isVideo, duration) {
     const tray = document.getElementById("media-preview-tray");
     const thumbImg = document.getElementById("media-preview-img");
     const thumbVideo = document.getElementById("media-preview-video");
+    const thumbDoc = document.getElementById("media-preview-doc-icon");
     const nameEl = document.getElementById("media-preview-name");
     const durationEl = document.getElementById("media-preview-duration");
     const sizeEl = document.getElementById("media-preview-size");
@@ -109,12 +183,23 @@ function displayMediaPreview(file, isVideo, duration) {
     const cancelBtn = document.getElementById("media-preview-cancel-btn");
 
     if (isVideo) {
+        if (thumbDoc) { thumbDoc.style.display = "none"; thumbDoc.textContent = ""; }
         if (thumbImg) { thumbImg.style.display = "none"; thumbImg.src = ""; }
         if (thumbVideo) {
             thumbVideo.src = currentUploadPreviewUrl;
             thumbVideo.style.display = "block";
         }
+    } else if (isDoc) {
+        if (thumbImg) { thumbImg.style.display = "none"; thumbImg.src = ""; }
+        if (thumbVideo) { thumbVideo.style.display = "none"; thumbVideo.src = ""; }
+        if (thumbDoc) {
+            const docInfo = getDocTypeDetails(file.name);
+            thumbDoc.textContent = docInfo.icon;
+            thumbDoc.title = docInfo.name;
+            thumbDoc.style.display = "flex";
+        }
     } else {
+        if (thumbDoc) { thumbDoc.style.display = "none"; thumbDoc.textContent = ""; }
         if (thumbVideo) { thumbVideo.style.display = "none"; thumbVideo.src = ""; }
         if (thumbImg) {
             thumbImg.src = currentUploadPreviewUrl;
@@ -122,7 +207,7 @@ function displayMediaPreview(file, isVideo, duration) {
         }
     }
 
-    if (nameEl) nameEl.textContent = file.name || (isVideo ? "video" : "image");
+    if (nameEl) nameEl.textContent = file.name || (isVideo ? "video" : (isDoc ? "file" : "image"));
 
     if (durationEl) {
         if (isVideo && duration) {
@@ -198,13 +283,16 @@ function startUpload() {
             try {
                 const data = JSON.parse(xhr.responseText);
                 if (data && data.url) {
+                    const fileNameLower = (currentUploadFile.name || "").toLowerCase();
+                    const fileExt = fileNameLower.split(".").pop();
                     const isVideo = currentUploadFile && (
                         (currentUploadFile.type && currentUploadFile.type.startsWith("video/")) ||
-                        currentUploadFile.name.toLowerCase().endsWith(".mp4") ||
-                        currentUploadFile.name.toLowerCase().endsWith(".webm")
+                        fileNameLower.endsWith(".mp4") ||
+                        fileNameLower.endsWith(".webm")
                     );
+                    const isDoc = currentUploadFile && ALLOWED_DOCUMENT_EXTS.includes(fileExt);
 
-                    // Seed the secure media cache with our local preview blob URL so sender gets instant display
+                    // Seed secure media cache with local preview blob URL for instant display
                     if (typeof seedSecureMediaCache === "function" && currentUploadPreviewUrl) {
                         seedSecureMediaCache(data.url, currentUploadPreviewUrl);
                     }
@@ -214,8 +302,10 @@ function startUpload() {
                         type: "chat",
                         room: currentFriend,
                         text: "",
-                        image_url: isVideo ? null : data.url,
-                        video_url: isVideo ? data.url : null
+                        image_url: (!isVideo && !isDoc) ? data.url : null,
+                        video_url: isVideo ? data.url : null,
+                        file_url: isDoc ? data.url : null,
+                        file_name: isDoc ? (data.filename || currentUploadFile.name) : null,
                     };
                     if (typeof activeReplyTarget !== "undefined" && activeReplyTarget) {
                         payload.reply_to_message_id = activeReplyTarget.messageId;
@@ -314,6 +404,9 @@ function cleanupUploadPreview() {
     const thumbVideo = document.getElementById("media-preview-video");
     if (thumbVideo) { thumbVideo.src = ""; thumbVideo.style.display = "none"; }
 
+    const thumbDoc = document.getElementById("media-preview-doc-icon");
+    if (thumbDoc) { thumbDoc.textContent = ""; thumbDoc.style.display = "none"; }
+
     const durationEl = document.getElementById("media-preview-duration");
     if (durationEl) { durationEl.textContent = ""; durationEl.style.display = "none"; }
 
@@ -325,4 +418,5 @@ function cleanupUploadPreview() {
 function handleFileUpload(inputElement) {
     handleFileSelect(inputElement);
 }
+
 

@@ -166,6 +166,28 @@ async function fetchSecureMediaBlobUrl(url) {
     return fetchPromise;
 }
 
+function getDocTypeDetails(filename) {
+    const ext = (filename || "").slice((filename || "").lastIndexOf(".")).toLowerCase();
+    switch (ext) {
+        case ".pdf":
+            return { icon: "📕", badge: "PDF", canOpen: true };
+        case ".txt":
+            return { icon: "📄", badge: "TXT", canOpen: true };
+        case ".csv":
+            return { icon: "📊", badge: "CSV", canOpen: true };
+        case ".json":
+            return { icon: "📋", badge: "JSON", canOpen: true };
+        case ".docx":
+            return { icon: "📘", badge: "DOCX", canOpen: false };
+        case ".xlsx":
+            return { icon: "📗", badge: "XLSX", canOpen: false };
+        case ".pptx":
+            return { icon: "📙", badge: "PPTX", canOpen: false };
+        default:
+            return { icon: "📎", badge: "FILE", canOpen: false };
+    }
+}
+
 if (typeof module !== "undefined" && module.exports) {
     module.exports = {
         escapeHtml,
@@ -177,7 +199,9 @@ if (typeof module !== "undefined" && module.exports) {
         formatFileSize,
         seedSecureMediaCache,
         revokeSecureMediaCache,
-        fetchSecureMediaBlobUrl
+        fetchSecureMediaBlobUrl,
+        getDocTypeDetails
     };
 }
+
 

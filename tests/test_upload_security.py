@@ -557,7 +557,7 @@ class TestRejectedUploadCleanup(UploadSecurityTestCase):
     def test_rejected_uploads_leave_no_artifacts(self):
         """Rejected uploads across various defect types leave no files in the upload directory."""
         rejected_scenarios = [
-            ("invalid_text.txt", b"Hello this is not an image", "text/plain", 415),
+            ("unsupported_archive.zip", b"PK\x05\x06" + b"\x00" * 18, "application/zip", 415),
             ("corrupt_webp.webp", b"RIFF\x20\x00\x00\x00NOTW" + b"\x00" * 16, "image/webp", 415),
             ("empty_file.png", b"", "image/png", 400),
             ("executable.png", b"MZ\x90\x00" + b"\x00" * 32, "image/png", 415),
@@ -635,7 +635,7 @@ class TestAllowlistRegression(UploadSecurityTestCase):
 
         # Representative unsupported binary headers
         unsupported_formats = [
-            ("document.pdf", b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n"),
+            ("archive.rar", b"Rar!\x1a\x07\x00\xcf\x90\x73\x00\x00\x0d\x00\x00\x00\x00\x00\x00\x00"),
             ("bitmap.bmp", b"BM\x36\x00\x00\x00\x00\x00\x00\x00\x36\x00"),
             ("tiff_le.tiff", b"II*\x00\x08\x00\x00\x00"),
             ("archive.zip", b"PK\x03\x04\x14\x00\x00\x00\x08\x00"),
@@ -1235,5 +1235,285 @@ class TestPhaseR2VideoUploadSecurity(UploadSecurityTestCase):
         self.assertEqual(reply_data["reply_to"]["content"], "🎥 Video")
 
 
+# ==============================================================================
+# 16. Document Upload Security (R3 - Files / Documents)
+# ==============================================================================
+class TestDocumentUploadSecurity(UploadSecurityTestCase):
+    """Verifies R3 document upload security, OOXML validation, JSON validation,
+    name trust resolution, authorization, and preview serialization."""
+
+    @staticmethod
+    def _create_ooxml_bytes(package_dir: str) -> bytes:
+        import io
+        import zipfile
+        bio = io.BytesIO()
+        with zipfile.ZipFile(bio, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>')
+            zf.writestr(f"{package_dir}/document.xml", "<document></document>")
+        return bio.getvalue()
+
+    @staticmethod
+    def _create_generic_zip_bytes() -> bytes:
+        import io
+        import zipfile
+        bio = io.BytesIO()
+        with zipfile.ZipFile(bio, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("test.txt", "hello world")
+        return bio.getvalue()
+
+    def test_valid_document_uploads(self):
+        """Supported document types (PDF, TXT, CSV, JSON, DOCX, XLSX, PPTX) upload cleanly."""
+        docs = [
+            ("report.pdf", b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n", "application/pdf", ".pdf"),
+            ("notes.txt", b"Plain text message content", "text/plain", ".txt"),
+            ("data.csv", b"col1,col2,col3\n1,2,3\n", "text/csv", ".csv"),
+            ("config.json", b'{"service": "chat", "version": 2}', "application/json", ".json"),
+            ("doc.docx", self._create_ooxml_bytes("word"), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx"),
+            ("sheet.xlsx", self._create_ooxml_bytes("xl"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"),
+            ("slides.pptx", self._create_ooxml_bytes("ppt"), "application/vnd.openxmlformats-officedocument.presentationml.presentation", ".pptx"),
+        ]
+
+        for filename, payload, mime, ext in docs:
+            with self.subTest(file=filename):
+                resp = self.client.post_file(
+                    "/upload",
+                    field_name="file",
+                    filename=filename,
+                    file_bytes=payload,
+                    content_type=mime,
+                    headers=self.auth_headers("alice"),
+                )
+                self.assertEqual(resp.status_code, 200)
+                data = resp.json()
+                self.assertIn("url", data)
+                self.assertTrue(data["url"].endswith(ext))
+                self.track_file(data["url"])
+
+                # Confirm sidecar metadata file was created on disk
+                from backend.services.upload_service import get_metadata_path_for_file
+                base_name = os.path.basename(data["url"])
+                meta_path = get_metadata_path_for_file(base_name)
+                self.assertTrue(os.path.exists(meta_path), f"Meta file missing for {base_name}")
+                self.track_file(meta_path)
+
+    def test_ooxml_strict_structural_validation(self):
+        """Clarification 1: PK\x03\x04 is preliminary only; require in-memory zipfile
+        validation of [Content_Types].xml and package structure without disk extraction."""
+        # 1. Generic zip file with PK\x03\x04 signature but no [Content_Types].xml
+        generic_zip = self._create_generic_zip_bytes()
+        resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="fake_doc.docx",
+            file_bytes=generic_zip,
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(resp.status_code, 415)
+
+        # 2. Zip file with [Content_Types].xml but wrong package dir (xl/ instead of word/ for docx)
+        wrong_pkg = self._create_ooxml_bytes("xl")
+        resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="mismatched.docx",
+            file_bytes=wrong_pkg,
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(resp.status_code, 415)
+
+        # 3. Truncated PK\x03\x04 corrupt archive
+        corrupt_zip = b"PK\x03\x04" + b"\x00" * 32
+        resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="corrupt.xlsx",
+            file_bytes=corrupt_zip,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(resp.status_code, 415)
+
+    def test_json_complete_content_validation(self):
+        """Clarification 2: Validate complete uploaded content as UTF-8 JSON; do not accept based on initial chunk."""
+        # 1. Starts with valid JSON object, but truncated / malformed at end
+        truncated_json = b'{"status": "ok", "items": [1, 2, 3, ' + b"x" * 200
+        resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="truncated.json",
+            file_bytes=truncated_json,
+            content_type="application/json",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(resp.status_code, 415)
+
+        # 2. JSON containing null bytes
+        null_byte_json = b'{"status": "ok", "data": "val\x00broken"}'
+        resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="null_byte.json",
+            file_bytes=null_byte_json,
+            content_type="application/json",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(resp.status_code, 415)
+
+    def test_text_and_csv_rejections(self):
+        """Text and CSV reject null bytes, HTML, and binary executable headers."""
+        # 1. Text with binary null bytes
+        resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="binary.txt",
+            file_bytes=b"Hello\x00World",
+            content_type="text/plain",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(resp.status_code, 415)
+
+        # 2. Dangerous HTML prefix disguised as text
+        resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="script.txt",
+            file_bytes=b"<!DOCTYPE html><html><body>danger</body></html>",
+            content_type="text/plain",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(resp.status_code, 415)
+
+    def test_filename_trust_resolution(self):
+        """Clarification 3: Client-provided file_name in message payload is not authoritative.
+        Server resolves trusted upload metadata stored during upload."""
+        # 1. Alice uploads authentic document
+        up_resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="Company_Financial_Report_2026.pdf",
+            file_bytes=b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n",
+            content_type="application/pdf",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(up_resp.status_code, 200)
+        file_url = up_resp.json()["url"]
+        self.track_file(file_url)
+
+        # 2. Alice sends message to Bob, attempting to spoof filename in payload
+        msg_resp = self.client.post(
+            "/messages/bob",
+            json={
+                "text": "Please review",
+                "file_url": file_url,
+                "file_name": "malicious_spoofed_name.exe",
+            },
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(msg_resp.status_code, 200)
+        msg_data = msg_resp.json()
+
+        # Server-authoritative resolution must ignore the client's spoofed name
+        self.assertEqual(msg_data.get("file_name"), "Company_Financial_Report_2026.pdf")
+        self.assertEqual(msg_data.get("content"), "Company_Financial_Report_2026.pdf")
+        self.assertEqual(msg_data.get("media_type"), "file")
+        self.assertEqual(msg_data.get("file_url"), file_url)
+        self.assertIsNotNone(msg_data.get("file_size"))
+
+    def test_authenticated_document_access_and_download(self):
+        """Clarification 6: Participants can access document; download query sets attachment Content-Disposition."""
+        up_resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="Quarterly Plan.pdf",
+            file_bytes=b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n",
+            content_type="application/pdf",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(up_resp.status_code, 200)
+        file_url = up_resp.json()["url"]
+        self.track_file(file_url)
+
+        msg_resp = self.client.post(
+            "/messages/bob",
+            json={"file_url": file_url},
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(msg_resp.status_code, 200)
+
+        # Alice (sender) accesses document -> 200 with inline disposition
+        alice_get = self.client.get(file_url, headers=self.auth_headers("alice"))
+        self.assertEqual(alice_get.status_code, 200)
+        self.assertEqual(alice_get.headers.get("x-content-type-options"), "nosniff")
+        self.assertIn("inline", alice_get.headers.get("content-disposition", ""))
+
+        # Alice accesses with ?download=1 -> 200 with attachment disposition
+        alice_dl = self.client.get(f"{file_url}?download=1", headers=self.auth_headers("alice"))
+        self.assertEqual(alice_dl.status_code, 200)
+        self.assertIn("attachment", alice_dl.headers.get("content-disposition", ""))
+        self.assertIn("Quarterly_Plan.pdf", alice_dl.headers.get("content-disposition", ""))
+        self.assertIn("Quarterly%20Plan.pdf", alice_dl.headers.get("content-disposition", ""))
+
+        # Bob (receiver) accesses -> 200
+        bob_get = self.client.get(file_url, headers=self.auth_headers("bob"))
+        self.assertEqual(bob_get.status_code, 200)
+
+        # Charlie (third-party) -> 403
+        charlie_get = self.client.get(file_url, headers=self.auth_headers("charlie"))
+        self.assertEqual(charlie_get.status_code, 403)
+
+        # Anonymous -> 401
+        self.assertEqual(self.client.get(file_url).status_code, 401)
+
+        # Direct access to .meta.json sidecar -> 404
+        base_name = os.path.basename(file_url)
+        uuid_part = base_name.rsplit(".", 1)[0]
+        meta_url = f"/uploads/{uuid_part}.meta.json"
+        self.assertEqual(self.client.get(meta_url, headers=self.auth_headers("alice")).status_code, 404)
+
+    def test_document_reply_and_conversation_preview(self):
+        """Document message serializes as '📎 <filename>' in reply-to and conversation list."""
+        up_resp = self.client.post_file(
+            "/upload",
+            field_name="file",
+            filename="Proposal.docx",
+            file_bytes=self._create_ooxml_bytes("word"),
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(up_resp.status_code, 200)
+        doc_url = up_resp.json()["url"]
+        self.track_file(doc_url)
+
+        msg_resp = self.client.post(
+            "/messages/bob",
+            json={"file_url": doc_url},
+            headers=self.auth_headers("alice"),
+        )
+        self.assertEqual(msg_resp.status_code, 200)
+        doc_msg_id = msg_resp.json()["id"]
+
+        # 1. Bob checks conversations list -> last_message should be "📎 Proposal.docx"
+        conv_resp = self.client.get("/conversations", headers=self.auth_headers("bob"))
+        self.assertEqual(conv_resp.status_code, 200)
+        convs = conv_resp.json()
+        alice_conv = next((c for c in convs if c["username"] == "alice"), None)
+        self.assertIsNotNone(alice_conv)
+        self.assertEqual(alice_conv["last_message"], "📎 Proposal.docx")
+
+        # 2. Bob replies to document message
+        reply_resp = self.client.post(
+            "/messages/alice",
+            json={"text": "Received the proposal!", "reply_to_message_id": doc_msg_id},
+            headers=self.auth_headers("bob"),
+        )
+        self.assertEqual(reply_resp.status_code, 200)
+        reply_data = reply_resp.json()
+        self.assertIn("reply_to", reply_data)
+        self.assertEqual(reply_data["reply_to"]["content"], "📎 Proposal.docx")
+
+
 if __name__ == "__main__":
     unittest.main()
+

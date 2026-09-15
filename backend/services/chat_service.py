@@ -1,13 +1,19 @@
+import os
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Tuple
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from backend.core.config import settings
 from backend.db.models import Message, User
 from backend.services.friend_service import are_friends
 from backend.services import reaction_service
-from backend.services.upload_service import is_video_file
+from backend.services.upload_service import (
+    is_video_file,
+    is_document_file,
+    get_upload_metadata,
+)
 
 
 class NotFoundError(Exception):
@@ -32,6 +38,23 @@ def _serialize_message_timestamp(timestamp: Optional[datetime]) -> Optional[str]
     return timestamp.isoformat().replace("+00:00", "Z")
 
 
+def _get_server_file_size(media_url: Optional[str]) -> Optional[int]:
+    """Derive authoritative file size in bytes from disk, or fallback to trusted metadata."""
+    if not media_url:
+        return None
+    base = os.path.basename(media_url.split("?")[0])
+    file_path = os.path.join(settings.UPLOADS_DIR, base)
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        try:
+            return os.path.getsize(file_path)
+        except OSError:
+            pass
+    meta = get_upload_metadata(base)
+    if meta and isinstance(meta.get("size"), int):
+        return meta["size"]
+    return None
+
+
 def _build_reply_to_info(message: Message, current_user: User, friend: User) -> Optional[dict]:
     """Build a compact reply-to dict for serialization, if the message is a reply."""
     if not message.reply_to_message_id:
@@ -45,6 +68,8 @@ def _build_reply_to_info(message: Message, current_user: User, friend: User) -> 
     parent_sender = current_user.username if parent.sender_id == current_user.id else friend.username
     if parent_deleted:
         parent_content = "This message was deleted"
+    elif parent.image_url and is_document_file(parent.image_url):
+        parent_content = f"📎 {parent.content}" if parent.content else "📎 File"
     elif parent.content:
         parent_content = parent.content
     elif parent.image_url:
@@ -64,18 +89,55 @@ def _build_reply_to_info(message: Message, current_user: User, friend: User) -> 
 def _message_to_dict(message: Message, current_user: User, friend: User, reactions: Optional[list] = None) -> dict:
     deleted_text = "This message was deleted"
     is_deleted = bool(message.is_deleted)
-    is_video = is_video_file(message.image_url) if message.image_url else False
-    video_url = message.image_url if (message.image_url and is_video) else None
-    img_url = message.image_url if (message.image_url and not is_video) else None
-    media_type = "video" if is_video else ("image" if message.image_url else None)
+    media_url = message.image_url if message.image_url else None
+    is_doc = is_document_file(media_url) if media_url else False
+    is_vid = is_video_file(media_url) if (media_url and not is_doc) else False
+    is_img = bool(media_url and not is_doc and not is_vid)
+
+    if is_doc:
+        media_type = "file"
+        file_url = media_url if not is_deleted else None
+        file_name = (message.content or os.path.basename(media_url)) if not is_deleted else None
+        file_size = _get_server_file_size(media_url) if not is_deleted else None
+        img_url = None
+        video_url = None
+        display_content = deleted_text if is_deleted else (message.content or file_name)
+    elif is_vid:
+        media_type = "video"
+        video_url = media_url if not is_deleted else None
+        file_url = None
+        file_name = None
+        file_size = None
+        img_url = None
+        display_content = deleted_text if is_deleted else message.content
+    elif is_img:
+        media_type = "image"
+        img_url = media_url if not is_deleted else None
+        file_url = None
+        file_name = None
+        file_size = None
+        video_url = None
+        display_content = deleted_text if is_deleted else message.content
+    else:
+        media_type = None
+        img_url = None
+        video_url = None
+        file_url = None
+        file_name = None
+        file_size = None
+        display_content = deleted_text if is_deleted else message.content
+
     return {
         "id": message.id,
         "sender": current_user.username if message.sender_id == current_user.id else friend.username,
         "sender_display_name": current_user.display_name if message.sender_id == current_user.id else friend.display_name,
         "receiver": friend.username if message.sender_id == current_user.id else current_user.username,
-        "content": deleted_text if is_deleted else message.content,
-        "image_url": None if is_deleted else img_url,
-        "video_url": None if is_deleted else video_url,
+        "content": display_content,
+        "image_url": img_url,
+        "video_url": video_url,
+        "file_url": file_url,
+        "file_name": file_name,
+        "file_size": file_size,
         "media_type": None if is_deleted else media_type,
         "timestamp": _serialize_message_timestamp(message.timestamp),
         "edited_at": _serialize_message_timestamp(message.edited_at),
@@ -126,24 +188,62 @@ def serialize_message_for_websocket(
     reactions: Optional[list] = None,
 ) -> Dict:
     deleted_text = "This message was deleted"
-    is_video = is_video_file(message.image_url) if message.image_url else False
-    video_url = message.image_url if (message.image_url and is_video) else None
-    img_url = message.image_url if (message.image_url and not is_video) else None
-    media_type = "video" if is_video else ("image" if message.image_url else None)
+    is_deleted = bool(message.is_deleted)
+    media_url = message.image_url if message.image_url else None
+    is_doc = is_document_file(media_url) if media_url else False
+    is_vid = is_video_file(media_url) if (media_url and not is_doc) else False
+    is_img = bool(media_url and not is_doc and not is_vid)
+
+    if is_doc:
+        media_type = "file"
+        file_url = media_url if not is_deleted else None
+        file_name = (message.content or os.path.basename(media_url)) if not is_deleted else None
+        file_size = _get_server_file_size(media_url) if not is_deleted else None
+        img_url = None
+        video_url = None
+        display_text = deleted_text if is_deleted else (message.content or file_name)
+    elif is_vid:
+        media_type = "video"
+        video_url = media_url if not is_deleted else None
+        file_url = None
+        file_name = None
+        file_size = None
+        img_url = None
+        display_text = deleted_text if is_deleted else message.content
+    elif is_img:
+        media_type = "image"
+        img_url = media_url if not is_deleted else None
+        file_url = None
+        file_name = None
+        file_size = None
+        video_url = None
+        display_text = deleted_text if is_deleted else message.content
+    else:
+        media_type = None
+        img_url = None
+        video_url = None
+        file_url = None
+        file_name = None
+        file_size = None
+        display_text = deleted_text if is_deleted else message.content
+
     payload = {
         "id": message.id,
         "type": event_type,
         "sender": current_user.username if message.sender_id == current_user.id else friend.username,
         "sender_display_name": current_user.display_name if message.sender_id == current_user.id else friend.display_name,
-        "text": deleted_text if message.is_deleted else message.content,
-        "image_url": None if message.is_deleted else img_url,
-        "video_url": None if message.is_deleted else video_url,
-        "media_type": None if message.is_deleted else media_type,
+        "text": display_text,
+        "image_url": img_url,
+        "video_url": video_url,
+        "file_url": file_url,
+        "file_name": file_name,
+        "file_size": file_size,
+        "media_type": None if is_deleted else media_type,
         "timestamp": _serialize_message_timestamp(message.timestamp),
         "edited_at": _serialize_message_timestamp(message.edited_at),
         "status": "read" if message.is_read else "sent",
         "read_at": _serialize_message_timestamp(message.read_at),
-        "is_deleted": bool(message.is_deleted),
+        "is_deleted": is_deleted,
         "deleted_at": _serialize_message_timestamp(message.deleted_at),
         "reactions": reactions if reactions is not None else [],
         "reply_to": _build_reply_to_info(message, current_user, friend),
@@ -158,11 +258,28 @@ def create_message(
     text: Optional[str] = None,
     image_url: Optional[str] = None,
     video_url: Optional[str] = None,
+    file_url: Optional[str] = None,
+    file_name: Optional[str] = None,
     reply_to_message_id: Optional[int] = None,
 ) -> Message:
-    media_url = video_url or image_url
+    media_url = file_url or video_url or image_url
     if not text and not media_url:
         raise BadRequestError("Message body cannot be empty")
+
+    content_text = text
+    if file_url:
+        # Validate that the referenced file exists in uploads
+        base_filename = os.path.basename(file_url.split("?")[0])
+        file_path = os.path.join(settings.UPLOADS_DIR, base_filename)
+        if not os.path.exists(file_path) or not os.path.isfile(file_path):
+            raise BadRequestError("Referenced media file does not exist")
+
+        # Clarification 3: Resolve trusted upload metadata server-side
+        meta = get_upload_metadata(base_filename)
+        if meta and meta.get("original_filename"):
+            content_text = meta["original_filename"]
+        elif not content_text:
+            content_text = file_name or base_filename
 
     if reply_to_message_id is not None:
         parent = db.query(Message).filter(Message.id == reply_to_message_id).first()
@@ -177,7 +294,7 @@ def create_message(
     message = Message(
         sender_id=sender.id,
         receiver_id=receiver.id,
-        content=text,
+        content=content_text,
         image_url=media_url,
         timestamp=datetime.now(timezone.utc),
         reply_to_message_id=reply_to_message_id,
@@ -242,6 +359,8 @@ def list_conversations(db: Session, current_user: User) -> List[Dict]:
         if last_message is not None:
             if last_message.is_deleted:
                 last_message_text = "This message was deleted"
+            elif last_message.image_url and is_document_file(last_message.image_url):
+                last_message_text = f"📎 {last_message.content}" if last_message.content else "📎 File"
             elif last_message.content:
                 last_message_text = last_message.content
             elif last_message.image_url:
@@ -278,6 +397,8 @@ def send_message(
     text: Optional[str] = None,
     image_url: Optional[str] = None,
     video_url: Optional[str] = None,
+    file_url: Optional[str] = None,
+    file_name: Optional[str] = None,
     reply_to_message_id: Optional[int] = None,
 ) -> Dict:
     friend = get_chat_friend(db, current_user, friend_username)
@@ -288,6 +409,8 @@ def send_message(
         text,
         image_url=image_url,
         video_url=video_url,
+        file_url=file_url,
+        file_name=file_name,
         reply_to_message_id=reply_to_message_id,
     )
 

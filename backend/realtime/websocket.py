@@ -536,6 +536,22 @@ async def websocket_endpoint(websocket: WebSocket,
                     }))
                     continue
 
+                file_url = data.get("file_url")
+                if file_url is not None and not isinstance(file_url, str):
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "File URL must be a string",
+                    }))
+                    continue
+
+                file_name = data.get("file_name")
+                if file_name is not None and not isinstance(file_name, str):
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "File name must be a string",
+                    }))
+                    continue
+
                 reply_to_id = data.get("reply_to_message_id")
 
                 try:
@@ -558,7 +574,15 @@ async def websocket_endpoint(websocket: WebSocket,
 
                 try:
                     new_msg = chat_service.create_message(
-                        db, user, friend, text, img_url, video_url=vid_url, reply_to_message_id=parsed_reply_to
+                        db,
+                        user,
+                        friend,
+                        text,
+                        img_url,
+                        video_url=vid_url,
+                        file_url=file_url,
+                        file_name=file_name,
+                        reply_to_message_id=parsed_reply_to,
                     )
                 except chat_service.BadRequestError as exc:
                     await websocket.send_text(json.dumps({

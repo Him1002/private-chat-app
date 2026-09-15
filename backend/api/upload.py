@@ -1,7 +1,10 @@
 import mimetypes
 import os
+import re
+from typing import Optional
+from urllib.parse import quote
 
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -17,18 +20,20 @@ router = APIRouter()
 async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):
     """Thin controller: validate request and delegate upload business logic to the service layer.
 
-    Preserves original behavior and response payload.
+    Preserves original behavior and response payload while adding file metadata.
     """
-    # Delegate to service that contains filename generation and storage logic
     from backend.services.upload_service import save_upload
 
-    url = save_upload(file)
-    return {"url": url}
+    result = save_upload(file)
+    if isinstance(result, dict):
+        return {"url": result["url"]}
+    return {"url": result}
 
 
 @router.get("/uploads/{filename}")
 async def get_uploaded_file(
     filename: str,
+    download: Optional[int] = Query(None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -36,7 +41,7 @@ async def get_uploaded_file(
 
     Authorization semantics:
     - Profile pictures: Accessible to all authenticated users.
-    - Chat images: Accessible only to conversation participants (sender and receiver).
+    - Chat media: Accessible only to conversation participants (sender and receiver).
     - Deleted messages: Media immediately returns 404.
     - Unlinked media: Media not tied to an active profile picture or message returns 404.
     - Path traversal / invalid filenames: Safely rejected with 400.
@@ -46,6 +51,10 @@ async def get_uploaded_file(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
 
     base_filename = os.path.basename(filename)
+    # Sidecar metadata files are strictly internal and cannot be directly requested
+    if base_filename.endswith(".meta.json"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+
     uploads_dir = os.path.abspath(settings.UPLOADS_DIR)
     file_path = os.path.abspath(os.path.join(uploads_dir, base_filename))
 
@@ -72,7 +81,10 @@ async def get_uploaded_file(
         return FileResponse(
             file_path,
             media_type=content_type or "application/octet-stream",
-            headers={"Cache-Control": "private, max-age=3600"},
+            headers={
+                "Cache-Control": "private, max-age=3600",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
     # 3. Check if this file is associated with a chat message
@@ -92,11 +104,65 @@ async def get_uploaded_file(
         if not any(user.id in (m.sender_id, m.receiver_id) for m in active_messages):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this media")
 
-        content_type, _ = mimetypes.guess_type(file_path)
+        from backend.services.upload_service import (
+            get_upload_metadata,
+            DOWNLOAD_ONLY_EXTENSIONS,
+        )
+
+        ext = base_filename.lower().split(".")[-1]
+
+        # Resolve trusted original filename from metadata or message content
+        meta = get_upload_metadata(base_filename)
+        original_name = None
+        if meta and meta.get("original_filename"):
+            original_name = meta["original_filename"]
+        elif active_messages and active_messages[0].content:
+            original_name = active_messages[0].content
+        else:
+            original_name = base_filename
+
+        # Sanitize filename for headers (prevent header injection)
+        safe_ascii = re.sub(r'[^a-zA-Z0-9._-]', '_', original_name)
+        rfc5987_val = quote(original_name.encode("utf-8"))
+
+        headers = {
+            "Cache-Control": "private, max-age=3600",
+            "X-Content-Type-Options": "nosniff",
+        }
+
+        # Determine disposition: attachment for ?download=1 or download-only formats
+        is_download = (download == 1) or (ext in DOWNLOAD_ONLY_EXTENSIONS)
+        if is_download:
+            headers["Content-Disposition"] = f'attachment; filename="{safe_ascii}"; filename*=UTF-8\'\'{rfc5987_val}'
+        elif ext in {"pdf", "txt", "json"}:
+            headers["Content-Disposition"] = f'inline; filename="{safe_ascii}"; filename*=UTF-8\'\'{rfc5987_val}'
+
+        # Canonical Content-Type resolution
+        if ext == "pdf":
+            content_type = "application/pdf"
+        elif ext == "txt":
+            content_type = "text/plain; charset=utf-8"
+        elif ext == "csv":
+            content_type = "text/csv; charset=utf-8"
+        elif ext == "json":
+            content_type = "application/json"
+        elif ext == "docx":
+            content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        elif ext == "xlsx":
+            content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        elif ext == "pptx":
+            content_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        elif ext == "mp4":
+            content_type = "video/mp4"
+        elif ext == "webm":
+            content_type = "video/webm"
+        else:
+            content_type, _ = mimetypes.guess_type(file_path)
+
         return FileResponse(
             file_path,
             media_type=content_type or "application/octet-stream",
-            headers={"Cache-Control": "private, max-age=3600"},
+            headers=headers,
         )
 
     # 4. Unlinked or unrecognized media files are rejected

@@ -104,6 +104,7 @@ class Settings:
         MAX_IMAGE_SIZE_BYTES: Optional[Union[int, str]] = None,
         MAX_VIDEO_SIZE_BYTES: Optional[Union[int, str]] = None,
         MAX_VIDEO_DURATION_SECONDS: Optional[Union[int, str]] = None,
+        MAX_FILE_SIZE_BYTES: Optional[Union[int, str]] = None,
     ):
         if _env_file is not None:
             if os.path.exists(_env_file):
@@ -256,6 +257,17 @@ class Settings:
         except (ValueError, TypeError):
             self.MAX_VIDEO_DURATION_SECONDS = 120
 
+        # Rich media file upload limit (Phase R3: default 25 MB)
+        raw_max_file = (
+            MAX_FILE_SIZE_BYTES
+            if MAX_FILE_SIZE_BYTES is not None
+            else os.getenv("MAX_FILE_SIZE_BYTES", str(25 * 1024 * 1024))
+        )
+        try:
+            self.MAX_FILE_SIZE_BYTES: int = max(1024, int(raw_max_file))
+        except (ValueError, TypeError):
+            self.MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
+
     @property
     def is_production(self) -> bool:
         """Return True if running in production mode."""
@@ -320,7 +332,8 @@ class Settings:
             f"CALL_TIMEOUT_SECONDS={self.CALL_TIMEOUT_SECONDS!r}, "
             f"MAX_IMAGE_SIZE_BYTES={self.MAX_IMAGE_SIZE_BYTES!r}, "
             f"MAX_VIDEO_SIZE_BYTES={self.MAX_VIDEO_SIZE_BYTES!r}, "
-            f"MAX_VIDEO_DURATION_SECONDS={self.MAX_VIDEO_DURATION_SECONDS!r})"
+            f"MAX_VIDEO_DURATION_SECONDS={self.MAX_VIDEO_DURATION_SECONDS!r}, "
+            f"MAX_FILE_SIZE_BYTES={self.MAX_FILE_SIZE_BYTES!r})"
         )
 
     def __str__(self) -> str:

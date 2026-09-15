@@ -739,13 +739,13 @@ class TestUploadApi(ApiIntegrationTestCase):
 
     def test_upload_invalid_type_rejected(self):
         """Non-image and spoofed signature uploads are rejected with 415."""
-        # Plain text
+        # Unsupported zip archive
         resp_text = self.client.post_file(
             "/upload",
             field_name="file",
-            filename="script.txt",
-            file_bytes=b"plain text content",
-            content_type="text/plain",
+            filename="script.zip",
+            file_bytes=b"PK\x05\x06" + b"\x00" * 18,
+            content_type="application/zip",
             headers=self.auth_headers("alice"),
         )
         self.assertEqual(resp_text.status_code, 415)

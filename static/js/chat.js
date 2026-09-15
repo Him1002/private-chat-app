@@ -435,6 +435,9 @@ function isMessageDeleted(messageEl) {
 
 function canEditMessage(messageEl) {
     if (!messageEl || !messageEl.classList.contains("me") || isMessageDeleted(messageEl)) return false;
+    if (messageEl.dataset.fileUrl || messageEl.dataset.videoUrl || messageEl.dataset.imageUrl || messageEl.dataset.mediaType === "file") {
+        return false;
+    }
     const messageText = (messageEl.dataset.text || "").trim();
     return Boolean(messageText);
 }
@@ -457,6 +460,9 @@ function applyDeletedState(messageEl, deletedAt) {
 
     const videoEl = messageEl.querySelector("video");
     if (videoEl) videoEl.remove();
+
+    const fileEl = messageEl.querySelector(".msg-file-card");
+    if (fileEl) fileEl.remove();
 
     const editedEl = messageEl.querySelector(".msg-edited");
     if (editedEl) editedEl.remove();
@@ -540,13 +546,18 @@ function enterReplyMode(messageEl) {
     const senderName = messageEl.querySelector(".sender-name");
     const sender = messageEl.classList.contains("me") ? "You" : (senderName ? senderName.textContent : "");
     let mediaPlaceholder = "";
-    if (messageEl.dataset.videoUrl) {
+    if (messageEl.dataset.fileUrl || messageEl.dataset.mediaType === "file") {
+        mediaPlaceholder = `📎 ${messageEl.dataset.fileName || "File"}`;
+    } else if (messageEl.dataset.videoUrl) {
         mediaPlaceholder = "🎥 Video";
     } else if (messageEl.dataset.imageUrl) {
         const urlLower = messageEl.dataset.imageUrl.toLowerCase();
         mediaPlaceholder = (urlLower.endsWith(".mp4") || urlLower.endsWith(".webm")) ? "🎥 Video" : "📷 Photo";
     }
-    const content = isDeleted ? "This message was deleted" : (messageEl.dataset.text || mediaPlaceholder);
+    let content = isDeleted ? "This message was deleted" : (messageEl.dataset.text || mediaPlaceholder);
+    if (!isDeleted && (messageEl.dataset.fileUrl || messageEl.dataset.mediaType === "file")) {
+        content = mediaPlaceholder;
+    }
 
     activeReplyTarget = {
         messageId,
@@ -889,17 +900,91 @@ function handleLightboxKeyDown(event) {
     }
 }
 
-function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "", reactions = null, replyTo = null, videoUrl = null) {
+function isDocumentUrl(url) {
+    if (!url || typeof url !== "string") return false;
+    const clean = url.split("?")[0].toLowerCase();
+    const docExts = [".pdf", ".txt", ".csv", ".json", ".docx", ".xlsx", ".pptx"];
+    return docExts.some(ext => clean.endsWith(ext));
+}
+
+async function openSecureDocument(url) {
+    const validated = sanitizeMediaUrl(url);
+    if (!validated) return;
+    if (typeof secureMediaCache !== "undefined" && secureMediaCache.has(validated)) {
+        window.open(secureMediaCache.get(validated), "_blank", "noopener,noreferrer");
+        return;
+    }
+    const newWin = window.open("", "_blank");
+    if (newWin) {
+        try {
+            newWin.opener = null;
+            newWin.document.title = "Loading document...";
+        } catch (_) {}
+    }
+    try {
+        const blobUrl = await fetchSecureMediaBlobUrl(validated);
+        if (blobUrl) {
+            if (newWin) {
+                newWin.location.href = blobUrl;
+            } else {
+                window.open(blobUrl, "_blank", "noopener,noreferrer");
+            }
+        } else {
+            if (newWin) newWin.close();
+            showToast("Failed to open document", "normal");
+        }
+    } catch (err) {
+        if (newWin) newWin.close();
+        showToast("Error opening document", "normal");
+    }
+}
+
+async function downloadSecureFile(url, fileName) {
+    const validated = sanitizeMediaUrl(url);
+    if (!validated) return;
+    const downloadUrl = validated.includes("?") ? `${validated}&download=1` : `${validated}?download=1`;
+    try {
+        const authToken = (typeof token !== "undefined" && token) ? token : (typeof AppState !== "undefined" && AppState.token ? AppState.token : "");
+        const headers = {};
+        if (authToken) {
+            headers["Authorization"] = `Bearer ${authToken}`;
+        }
+        const res = await fetch(downloadUrl, { headers });
+        if (!res.ok) {
+            showToast("Failed to download file", "normal");
+            return;
+        }
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = fileName || "download";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch (err) {
+        showToast("Error downloading file", "normal");
+    }
+}
+
+function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "", reactions = null, replyTo = null, videoUrl = null, fileUrl = null, fileName = null, fileSize = null, mediaType = null) {
     const box = document.getElementById("messages");
     const isMe = sender === currentUser;
     const deleted = Boolean(isDeleted || text === "This message was deleted");
     const safeText = deleted ? "This message was deleted" : (text || "");
 
-    // Resolve media: explicit videoUrl or video extension in imageUrl
-    const rawMedia = videoUrl || imageUrl || "";
-    const isVideo = Boolean(videoUrl) || (rawMedia && (rawMedia.toLowerCase().endsWith(".mp4") || rawMedia.toLowerCase().endsWith(".webm")));
+    // Resolve media: document, video, or image
+    const rawMedia = fileUrl || videoUrl || imageUrl || "";
+    const isDoc = (mediaType === "file") || Boolean(fileUrl) || (rawMedia && isDocumentUrl(rawMedia));
+    const isVideo = !isDoc && (mediaType === "video" || Boolean(videoUrl) || (rawMedia && (rawMedia.toLowerCase().endsWith(".mp4") || rawMedia.toLowerCase().endsWith(".webm"))));
+    const isImg = !isDoc && !isVideo && (mediaType === "image" || Boolean(imageUrl) || (rawMedia && !rawMedia.toLowerCase().endsWith(".mp4") && !rawMedia.toLowerCase().endsWith(".webm")));
+
     const safeVideoUrl = deleted ? "" : (isVideo ? rawMedia : "");
-    const safeImageUrl = deleted ? "" : (!isVideo ? rawMedia : "");
+    const safeImageUrl = deleted ? "" : (isImg ? rawMedia : "");
+    const safeFileUrl = deleted ? "" : (isDoc ? rawMedia : "");
+    const safeFileName = deleted ? "" : (fileName || (isDoc ? (text || "Document") : ""));
+    const safeFileSize = deleted ? null : fileSize;
 
     const div = document.createElement("div");
     div.className = `msg ${isMe ? "me" : "friend"}`;
@@ -907,6 +992,9 @@ function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messag
     div.dataset.text = safeText;
     div.dataset.imageUrl = safeImageUrl;
     div.dataset.videoUrl = safeVideoUrl;
+    div.dataset.fileUrl = safeFileUrl;
+    div.dataset.fileName = safeFileName;
+    div.dataset.mediaType = isDoc ? "file" : (isVideo ? "video" : (isImg ? "image" : "text"));
     div.dataset.status = normalizeMessageStatus(status, status === "read");
     div.dataset.editedAt = editedAt || "";
     div.dataset.isDeleted = deleted ? "true" : "false";
@@ -939,9 +1027,10 @@ function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messag
         }
     }
 
-    // 3. Media image / video with secure authenticated loading
+    // 3. Media image / video / document with secure authenticated loading
     const validatedImageUrl = sanitizeMediaUrl(safeImageUrl);
     const validatedVideoUrl = sanitizeMediaUrl(safeVideoUrl);
+    const validatedFileUrl = sanitizeMediaUrl(safeFileUrl);
 
     if (!deleted && validatedImageUrl) {
         const imgEl = document.createElement("img");
@@ -1019,14 +1108,85 @@ function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messag
             videoEl.src = validatedVideoUrl;
             videoEl.classList.remove("loading");
         }
+    } else if (!deleted && validatedFileUrl) {
+        const fileCard = document.createElement("div");
+        fileCard.className = "msg-file-card";
+        const typeDetails = (typeof getDocTypeDetails === "function")
+            ? getDocTypeDetails(safeFileName || validatedFileUrl)
+            : { icon: "📎", badge: "FILE", canOpen: false };
+
+        const iconContainer = document.createElement("div");
+        iconContainer.className = "msg-file-icon";
+
+        const iconEmoji = document.createElement("span");
+        iconEmoji.className = "msg-file-icon-emoji";
+        iconEmoji.textContent = typeDetails.icon;
+
+        const iconBadge = document.createElement("span");
+        iconBadge.className = "msg-file-icon-badge";
+        iconBadge.textContent = typeDetails.badge;
+
+        iconContainer.appendChild(iconEmoji);
+        iconContainer.appendChild(iconBadge);
+        fileCard.appendChild(iconContainer);
+
+        const infoContainer = document.createElement("div");
+        infoContainer.className = "msg-file-info";
+
+        const nameEl = document.createElement("span");
+        nameEl.className = "msg-file-name";
+        nameEl.textContent = safeFileName || "Document";
+        nameEl.title = safeFileName || "Document";
+
+        const metaEl = document.createElement("span");
+        metaEl.className = "msg-file-meta";
+        const sizeText = safeFileSize ? formatFileSize(safeFileSize) : "";
+        metaEl.textContent = sizeText ? `${typeDetails.badge} • ${sizeText}` : typeDetails.badge;
+
+        infoContainer.appendChild(nameEl);
+        infoContainer.appendChild(metaEl);
+        fileCard.appendChild(infoContainer);
+
+        const actionsContainer = document.createElement("div");
+        actionsContainer.className = "msg-file-actions";
+
+        if (typeDetails.canOpen) {
+            const openBtn = document.createElement("button");
+            openBtn.type = "button";
+            openBtn.className = "msg-file-btn open";
+            openBtn.textContent = "Open";
+            openBtn.title = "Open document in new tab";
+            openBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                openSecureDocument(validatedFileUrl);
+            });
+            actionsContainer.appendChild(openBtn);
+        }
+
+        const downloadBtn = document.createElement("button");
+        downloadBtn.type = "button";
+        downloadBtn.className = "msg-file-btn download";
+        downloadBtn.textContent = "Download";
+        downloadBtn.title = "Download file";
+        downloadBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            downloadSecureFile(validatedFileUrl, safeFileName);
+        });
+        actionsContainer.appendChild(downloadBtn);
+
+        fileCard.appendChild(actionsContainer);
+        div.appendChild(fileCard);
     }
 
     // 4. Message text
     if (safeText) {
-        const textEl = document.createElement("span");
-        textEl.className = "msg-text";
-        textEl.textContent = safeText;
-        div.appendChild(textEl);
+        const isDocDuplicateText = isDoc && !deleted && (safeText === safeFileName || safeText === safeFileUrl);
+        if (!isDocDuplicateText) {
+            const textEl = document.createElement("span");
+            textEl.className = "msg-text";
+            textEl.textContent = safeText;
+            div.appendChild(textEl);
+        }
     }
 
     // 5. Edited indicator

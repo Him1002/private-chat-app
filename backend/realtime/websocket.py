@@ -7,7 +7,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from backend.db.database import get_db
+from backend.db.database import get_db, SessionLocal
 from backend.db.models import User, Message
 from backend.core.security import verify_ws_token
 from backend.services import chat_service
@@ -25,6 +25,35 @@ online_users = {}
 connected_sockets = {}
 
 rooms = {}  # room_name -> list of (websocket, username)
+
+# Active room and visibility tracking per WebSocket connection (V2 Task R7)
+active_viewing_room = {}  # websocket -> room_id
+socket_visibility = {}    # websocket -> bool
+
+
+def is_user_actively_viewing(recipient_id: int, sender_id: int) -> bool:
+    """Return True if recipient currently has an active, visible WebSocket in the DM room with sender.
+
+    This serves as the authoritative server-side active conversation suppression check.
+    """
+    sockets = connected_sockets.get(recipient_id, [])
+    if not sockets:
+        return False
+
+    db = SessionLocal()
+    try:
+        recipient = db.query(User).filter(User.id == recipient_id).first()
+        sender = db.query(User).filter(User.id == sender_id).first()
+        if not recipient or not sender:
+            return False
+        target_room = get_dm_room(recipient.username, sender.username)
+    finally:
+        db.close()
+
+    for ws in sockets:
+        if active_viewing_room.get(ws) == target_room and socket_visibility.get(ws, False) is True:
+            return True
+    return False
 
 
 async def deliver_to_user(user_id: int, payload: dict) -> int:
@@ -357,6 +386,9 @@ def remove_connection_from_rooms(websocket: WebSocket):
     for room_id in empty_rooms:
         del rooms[room_id]
 
+    active_viewing_room.pop(websocket, None)
+    socket_visibility.pop(websocket, None)
+
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket,
@@ -386,6 +418,8 @@ async def websocket_endpoint(websocket: WebSocket,
     if user.id not in connected_sockets:
         connected_sockets[user.id] = []
     connected_sockets[user.id].append(websocket)
+    active_viewing_room[websocket] = None
+    socket_visibility[websocket] = True
     logger.info("%s connected (Online)", user.username)
 
     try:
@@ -472,6 +506,8 @@ async def websocket_endpoint(websocket: WebSocket,
                     rooms[room_id] = []
 
                 rooms[room_id].append((websocket, user))
+                active_viewing_room[websocket] = room_id
+                socket_visibility[websocket] = True
 
                 _, history_messages = chat_service.get_chat_messages(db, user, friend_username)
 
@@ -500,6 +536,24 @@ async def websocket_endpoint(websocket: WebSocket,
                         for conn, target_user in rooms[room_id]:
                             if target_user.id == friend.id:
                                 await conn.send_text(json.dumps(read_payload))
+
+            # ---------------- LEAVE ROOM ----------------
+            elif msg_type == "leave":
+                remove_connection_from_rooms(websocket)
+                active_viewing_room[websocket] = None
+                continue
+
+            # ---------------- VISIBILITY SIGNAL (V2 Task R7) ----------------
+            elif msg_type == "visibility":
+                is_vis = bool(data.get("visible", True))
+                socket_visibility[websocket] = is_vis
+                room_name = data.get("room")
+                if room_name and isinstance(room_name, str) and room_name.strip():
+                    target_dm = get_dm_room(user.username, room_name.strip())
+                    active_viewing_room[websocket] = target_dm if is_vis else None
+                elif not is_vis:
+                    active_viewing_room[websocket] = None
+                continue
 
             # ---------------- CHAT MESSAGE ----------------
             elif msg_type == "chat":
@@ -628,6 +682,13 @@ async def websocket_endpoint(websocket: WebSocket,
 
                 if not sender_received:
                     await websocket.send_text(json.dumps(message_payload))
+
+                # Trigger Web Push notification asynchronously (never blocks WebSocket delivery)
+                try:
+                    from backend.services.push_service import trigger_message_push
+                    trigger_message_push(user.id, friend.id, new_msg.id)
+                except Exception as push_err:
+                    logger.debug("Failed to trigger push notification: %s", push_err)
 
             # ---------------- DELETE MESSAGE ----------------
             elif msg_type == "message_delete":

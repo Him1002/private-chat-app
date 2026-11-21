@@ -24,7 +24,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from backend.db.database import Base, engine as backend_engine
-from backend.db.models import User, Friend, Message, MessageReaction
+from backend.db.models import User, Friend, Message, MessageReaction, PushSubscription
 from tests.base import BaseTestCase
 
 # Record the production chat.db hash at module import time (immediately before test suite execution)
@@ -231,6 +231,33 @@ class TestFreshSchemaValidation(BaseTestCase):
             constrained_sets,
             "Missing unique constraint on (message_id, user_id, emoji)",
         )
+
+    def test_push_subscriptions_table_schema(self):
+        """Push subscriptions table must have FK to users.id, unique constraint on user_id, and non-null fields."""
+        inspector = inspect(self.engine)
+        columns = {col["name"]: col for col in inspector.get_columns("push_subscriptions")}
+
+        expected_columns = {"id", "user_id", "endpoint", "p256dh", "auth", "created_at", "updated_at"}
+        self.assertTrue(expected_columns.issubset(columns.keys()))
+
+        # Non-nullable columns
+        self.assertFalse(columns["user_id"]["nullable"])
+        self.assertFalse(columns["endpoint"]["nullable"])
+        self.assertFalse(columns["p256dh"]["nullable"])
+        self.assertFalse(columns["auth"]["nullable"])
+
+        # FK to users.id
+        fks = inspector.get_foreign_keys("push_subscriptions")
+        fk_map = {tuple(fk["constrained_columns"]): (fk["referred_table"], tuple(fk["referred_columns"])) for fk in fks}
+        self.assertEqual(fk_map.get(("user_id",)), ("users", ("id",)))
+
+        # Unique constraint on user_id (one active subscription per account)
+        unique_constraints = inspector.get_unique_constraints("push_subscriptions")
+        unique_cols = {tuple(uc["column_names"]) for uc in unique_constraints}
+        # In SQLite/SQLAlchemy, unique can be a constraint or a unique index
+        unique_indexes = {tuple(idx["column_names"]) for idx in inspector.get_indexes("push_subscriptions") if idx.get("unique")}
+        has_unique_user = (("user_id",) in unique_cols) or (("user_id",) in unique_indexes)
+        self.assertTrue(has_unique_user, "Missing unique constraint/index on push_subscriptions.user_id")
 
     def test_table_indexes_exist(self):
         """Verify indexed columns have corresponding indexes created."""

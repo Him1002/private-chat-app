@@ -1361,5 +1361,89 @@
     color: #ffffff;
 }
 
+/* Push Notification Permission Banner (V2 Task R7) */
+.push-permission-banner {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10000;
+    background: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    padding: 12px 18px;
+    max-width: 90vw;
+    width: 440px;
+    animation: pushSlideDown 0.3s ease;
+}
+
+@keyframes pushSlideDown {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -15px);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+}
+
+.push-prompt-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.push-prompt-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.push-prompt-text {
+    flex: 1;
+    font-size: 13px;
+    color: #e0e0e0;
+    line-height: 1.4;
+}
+
+.push-prompt-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.push-btn-primary {
+    background: #0084ff;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.push-btn-primary:hover {
+    background: #0070d6;
+}
+
+.push-btn-secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: #aaaaaa;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.push-btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+}
+
 
 

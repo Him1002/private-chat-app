@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, UniqueConstraint
 from backend.db.database import Base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from datetime import datetime, UTC
 
 class User(Base):
@@ -69,3 +69,17 @@ class MessageReaction(Base):
 
     message = relationship("Message", back_populates="reactions")
     user = relationship("User")
+
+
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    endpoint = Column(String, nullable=False)
+    p256dh = Column(String, nullable=False)
+    auth = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.now(UTC))
+    updated_at = Column(DateTime, default=datetime.now(UTC), onupdate=datetime.now(UTC))
+
+    user = relationship("User", backref=backref("push_subscription", uselist=False, cascade="all, delete-orphan"))

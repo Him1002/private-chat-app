@@ -37,6 +37,16 @@ async function handleAuth() {
                 connectWebSocket();
                 startPresenceRefresh();
                 loadSidebar();
+                if (typeof initPushNotifications === "function") {
+                    initPushNotifications();
+                }
+                if (typeof pendingChatNavigation === "string" && pendingChatNavigation) {
+                    const chatToOpen = pendingChatNavigation;
+                    pendingChatNavigation = null;
+                    if (typeof navigateToConversation === "function") {
+                        navigateToConversation(chatToOpen);
+                    }
+                }
             }
         } else {
             showToast(data.detail || "Error", "error");
@@ -49,6 +59,9 @@ async function handleAuth() {
 
 function logout() {
     // 1. Close session-level work
+    if (typeof unsubscribePush === "function") {
+        unsubscribePush();
+    }
     if (typeof cleanupWebRTCCall === "function") {
         cleanupWebRTCCall();
     }

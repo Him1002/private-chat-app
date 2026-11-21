@@ -64,6 +64,20 @@ def health_check():
     return {"status": "ok"}
 
 
+@app.get("/sw.js")
+def service_worker():
+    """Serve the Web Push service worker at root scope /."""
+    sw_path = os.path.join(settings.STATIC_DIR, "sw.js")
+    return FileResponse(
+        sw_path,
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Service-Worker-Allowed": "/",
+        },
+    )
+
+
 
 # ================= ROUTES =================
 from backend.api.auth import router as auth_router
@@ -94,4 +108,7 @@ app.include_router(profile_router)
 
 from backend.api.call import router as call_router
 app.include_router(call_router)
+
+from backend.api.push import router as push_router
+app.include_router(push_router)
 

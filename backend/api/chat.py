@@ -70,7 +70,7 @@ async def send_message(
     db: Session = Depends(get_db),
 ):
     try:
-        return chat_service.send_message(
+        res = chat_service.send_message(
             db,
             current_user,
             friend_username,
@@ -82,6 +82,14 @@ async def send_message(
             voice_url=data.voice_url or data.audio_url,
             reply_to_message_id=data.reply_to_message_id,
         )
+        try:
+            from backend.services.push_service import trigger_message_push
+            friend = db.query(User).filter(User.username == friend_username).first()
+            if friend and res.get("id"):
+                trigger_message_push(current_user.id, friend.id, res["id"])
+        except Exception:
+            pass
+        return res
     except chat_service.NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except chat_service.BadRequestError as e:

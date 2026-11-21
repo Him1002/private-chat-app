@@ -107,6 +107,10 @@ class Settings:
         MAX_FILE_SIZE_BYTES: Optional[Union[int, str]] = None,
         MAX_VOICE_SIZE_BYTES: Optional[Union[int, str]] = None,
         MAX_VOICE_DURATION_SECONDS: Optional[Union[int, str]] = None,
+        VAPID_PUBLIC_KEY: Optional[str] = None,
+        VAPID_PRIVATE_KEY: Optional[str] = None,
+        VAPID_CLAIMS_SUB: Optional[str] = None,
+        WEB_PUSH_ENABLED: Optional[Union[bool, str]] = None,
     ):
         if _env_file is not None:
             if os.path.exists(_env_file):
@@ -292,11 +296,52 @@ class Settings:
         except (ValueError, TypeError):
             self.MAX_VOICE_DURATION_SECONDS = 120
 
+        # Web Push / VAPID configuration (V2 Task R7)
+        raw_vapid_pub = VAPID_PUBLIC_KEY if VAPID_PUBLIC_KEY is not None else os.getenv("VAPID_PUBLIC_KEY")
+        self.VAPID_PUBLIC_KEY: Optional[str] = raw_vapid_pub.strip() if raw_vapid_pub and raw_vapid_pub.strip() else None
+
+        raw_vapid_priv = VAPID_PRIVATE_KEY if VAPID_PRIVATE_KEY is not None else os.getenv("VAPID_PRIVATE_KEY")
+        self.VAPID_PRIVATE_KEY: Optional[str] = raw_vapid_priv.strip() if raw_vapid_priv and raw_vapid_priv.strip() else None
+
+        raw_vapid_sub = VAPID_CLAIMS_SUB if VAPID_CLAIMS_SUB is not None else os.getenv("VAPID_CLAIMS_SUB")
+        self.VAPID_CLAIMS_SUB: Optional[str] = raw_vapid_sub.strip() if raw_vapid_sub and raw_vapid_sub.strip() else None
+
+        raw_push_enabled = WEB_PUSH_ENABLED if WEB_PUSH_ENABLED is not None else os.getenv("WEB_PUSH_ENABLED")
+        if raw_push_enabled is not None:
+            if isinstance(raw_push_enabled, bool):
+                self.WEB_PUSH_ENABLED: bool = raw_push_enabled
+            else:
+                self.WEB_PUSH_ENABLED = str(raw_push_enabled).strip().lower() in ("true", "1", "yes", "on")
+        else:
+            # Development/test keeps Web Push disabled unless explicit valid VAPID configuration is supplied
+            self.WEB_PUSH_ENABLED = bool(self.VAPID_PUBLIC_KEY and self.VAPID_PRIVATE_KEY and self.VAPID_CLAIMS_SUB)
+
+        if self.is_production:
+            if self.WEB_PUSH_ENABLED or self.VAPID_PUBLIC_KEY or self.VAPID_PRIVATE_KEY:
+                if not self.VAPID_PRIVATE_KEY:
+                    raise RuntimeError("Production mode requires VAPID_PRIVATE_KEY environment variable when Web Push is enabled.")
+                if self.VAPID_PRIVATE_KEY in INSECURE_SECRETS:
+                    raise RuntimeError("Insecure placeholder VAPID_PRIVATE_KEY is not permitted in production mode.")
+                if not self.VAPID_PUBLIC_KEY:
+                    raise RuntimeError("Production mode requires VAPID_PUBLIC_KEY environment variable when Web Push is enabled.")
+                if not self.VAPID_CLAIMS_SUB:
+                    raise RuntimeError("Production mode requires VAPID_CLAIMS_SUB environment variable when Web Push is enabled.")
+
 
     @property
     def is_production(self) -> bool:
         """Return True if running in production mode."""
         return self.ENVIRONMENT == "production"
+
+    @property
+    def is_web_push_configured(self) -> bool:
+        """Return True if Web Push is enabled and all required VAPID settings are configured."""
+        return bool(
+            self.WEB_PUSH_ENABLED
+            and self.VAPID_PUBLIC_KEY
+            and self.VAPID_PRIVATE_KEY
+            and self.VAPID_CLAIMS_SUB
+        )
 
     def get_sqlite_db_path(self) -> Path:
         """Resolve the SQLite database filesystem path from DATABASE_URL.
@@ -360,7 +405,11 @@ class Settings:
             f"MAX_VIDEO_DURATION_SECONDS={self.MAX_VIDEO_DURATION_SECONDS!r}, "
             f"MAX_FILE_SIZE_BYTES={self.MAX_FILE_SIZE_BYTES!r}, "
             f"MAX_VOICE_SIZE_BYTES={self.MAX_VOICE_SIZE_BYTES!r}, "
-            f"MAX_VOICE_DURATION_SECONDS={self.MAX_VOICE_DURATION_SECONDS!r})"
+            f"MAX_VOICE_DURATION_SECONDS={self.MAX_VOICE_DURATION_SECONDS!r}, "
+            f"WEB_PUSH_ENABLED={self.WEB_PUSH_ENABLED!r}, "
+            f"VAPID_PUBLIC_KEY={self.VAPID_PUBLIC_KEY!r}, "
+            f"VAPID_PRIVATE_KEY={'***' if self.VAPID_PRIVATE_KEY else None!r}, "
+            f"VAPID_CLAIMS_SUB={self.VAPID_CLAIMS_SUB!r})"
         )
 
     def __str__(self) -> str:

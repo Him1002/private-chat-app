@@ -122,4 +122,10 @@ function logout() {
     // Clear Form
     document.getElementById("username").value = "";
     document.getElementById("password").value = "";
+    const currPassEl = document.getElementById("change-current-password");
+    if (currPassEl) currPassEl.value = "";
+    const newPassEl = document.getElementById("change-new-password");
+    if (newPassEl) newPassEl.value = "";
+    const confPassEl = document.getElementById("change-confirm-password");
+    if (confPassEl) confPassEl.value = "";
 }

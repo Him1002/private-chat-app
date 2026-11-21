@@ -15,6 +15,12 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+    new_password_confirm: str
+
+
 @router.post("/login")
 def login(
     request: Request,
@@ -40,3 +46,20 @@ def register(
 @router.get("/me")
 def read_me(current_user: User = Depends(get_current_user)):
     return {"username": current_user.username}
+
+
+@router.post("/change-password")
+def change_password(
+    data: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    auth_service.change_password(
+        db=db,
+        user=current_user,
+        current_password=data.current_password,
+        new_password=data.new_password,
+        new_password_confirm=data.new_password_confirm,
+    )
+    return {"msg": "Password changed successfully"}
+

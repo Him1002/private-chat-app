@@ -246,7 +246,7 @@
 </div>
 
 <div id="profile-screen" class="overlay" style="display: none;">
-    <div class="box" style="position: relative;">
+    <div class="box" style="position: relative; max-height: 90vh; overflow-y: auto;">
         <button type="button" onclick="closeProfile()" style="position: absolute; top: 10px; right: 10px; background: none; border: none; font-size: 20px; color: #aaa; cursor: pointer;">&times;</button>
         <h2 style="text-align: center; margin-top: 0;">My Profile</h2>
         
@@ -269,6 +269,22 @@
                 <button onclick="closeProfile()" style="background: #444; flex: 1;">Cancel</button>
                 <button onclick="saveProfile()" style="background: #0084ff; flex: 1;">Save</button>
             </div>
+        </div>
+
+        <hr style="border: 0; border-top: 1px solid #333; margin: 20px 0 10px 0;">
+        <h3 style="text-align: center; margin: 0; font-size: 16px; color: #eee;">Change Password</h3>
+
+        <div style="display: flex; flex-direction: column; gap: 10px; text-align: left;">
+            <label style="font-size: 13px; color: #ccc;">Current Password</label>
+            <input id="change-current-password" type="password" placeholder="Current password">
+
+            <label style="font-size: 13px; color: #ccc;">New Password</label>
+            <input id="change-new-password" type="password" placeholder="New password (min 8 chars)">
+
+            <label style="font-size: 13px; color: #ccc;">Confirm New Password</label>
+            <input id="change-confirm-password" type="password" placeholder="Confirm new password">
+
+            <button id="change-password-btn" type="button" onclick="handleChangePassword()" style="background: #28a745; margin-top: 5px; cursor: pointer;">Change Password</button>
         </div>
     </div>
 </div>

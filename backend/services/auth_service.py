@@ -138,3 +138,52 @@ def register_user(db: Session, username: str, password: str, client_ip: str) -> 
     logger.info("User registered successfully: '%s'", new_user.username)
 
     return new_user
+
+
+def change_password(
+    db: Session,
+    user: User,
+    current_password: str,
+    new_password: str,
+    new_password_confirm: str,
+) -> None:
+    """Change the password for an authenticated user.
+
+    - Verifies mandatory current and new password fields.
+    - Verifies current password against existing hash.
+    - Verifies new password and confirmation match.
+    - Enforces V1 password policy (8-72 UTF-8 bytes).
+    - Hashes new password with bcrypt and persists to database.
+    - Never modifies hash on validation or verification failure.
+
+    Raises:
+        HTTPException(400): If any validation or verification check fails.
+    """
+    if not current_password:
+        raise HTTPException(status_code=400, detail="Current password is required")
+    if not new_password:
+        raise HTTPException(status_code=400, detail="New password is required")
+    if not new_password_confirm:
+        raise HTTPException(status_code=400, detail="Password confirmation is required")
+
+    if not verify_password(current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Incorrect current password")
+
+    if new_password != new_password_confirm:
+        raise HTTPException(status_code=400, detail="New password and confirmation do not match")
+
+    try:
+        validate_new_password(new_password)
+    except PasswordValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    try:
+        user.password_hash = hash_password(new_password)
+        db.commit()
+        db.refresh(user)
+    except Exception:
+        db.rollback()
+        raise
+
+    logger.info("Password changed successfully for user '%s'", user.username)
+

@@ -610,3 +610,378 @@ class TestCoreSecurityUtilities(unittest.TestCase):
         self.assertNotEqual(plain, hashed)
         self.assertTrue(verify_password(plain, hashed))
         self.assertFalse(verify_password("WrongPassword123!", hashed))
+
+
+# ==============================================================================
+# 5. R8 Change Password Tests
+# ==============================================================================
+class TestChangePassword(AuthHardeningTestCase):
+    """Tests covering the R8 change-password feature and security boundaries."""
+
+    def auth_headers(self, username: str) -> dict:
+        token = create_access_token(
+            data={"sub": username},
+            expires_delta=timedelta(minutes=30),
+        )
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_change_password_success(self):
+        """Authenticated user successfully changes password with compliant credentials."""
+        old_pass = "OldPassword123!"
+        new_pass = "NewPassword456!"
+        user = self.create_user("change_success_user", password_hash=pwd_context.hash(old_pass))
+
+        resp = self.client.post(
+            "/change-password",
+            json={
+                "current_password": old_pass,
+                "new_password": new_pass,
+                "new_password_confirm": new_pass,
+            },
+            headers=self.auth_headers("change_success_user"),
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"msg": "Password changed successfully"})
+
+        # Verify DB hash was updated
+        self.db.refresh(user)
+        self.assertTrue(verify_password(new_pass, user.password_hash))
+        self.assertFalse(verify_password(old_pass, user.password_hash))
+
+    def test_change_password_incorrect_current_password_rejected(self):
+        """Password change with incorrect current password returns HTTP 400 and preserves hash."""
+        correct_pass = "ActualPassword123!"
+        wrong_pass = "WrongPassword999!"
+        new_pass = "NewPassword456!"
+        initial_hash = pwd_context.hash(correct_pass)
+        user = self.create_user("wrong_curr_user", password_hash=initial_hash)
+
+        resp = self.client.post(
+            "/change-password",
+            json={
+                "current_password": wrong_pass,
+                "new_password": new_pass,
+                "new_password_confirm": new_pass,
+            },
+            headers=self.auth_headers("wrong_curr_user"),
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json().get("detail"), "Incorrect current password")
+
+        # Stored hash must be untouched
+        self.db.refresh(user)
+        self.assertEqual(user.password_hash, initial_hash)
+
+    def test_change_password_confirmation_mismatch_rejected(self):
+        """New password and confirmation mismatch returns HTTP 400."""
+        curr_pass = "CurrentPass123!"
+        user = self.create_user("mismatch_user", password_hash=pwd_context.hash(curr_pass))
+
+        resp = self.client.post(
+            "/change-password",
+            json={
+                "current_password": curr_pass,
+                "new_password": "NewValidPassword123!",
+                "new_password_confirm": "DifferentPassword456!",
+            },
+            headers=self.auth_headers("mismatch_user"),
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json().get("detail"), "New password and confirmation do not match")
+
+    def test_change_password_below_minimum_rejected(self):
+        """New password under 8 UTF-8 bytes returns HTTP 400."""
+        curr_pass = "CurrentPass123!"
+        self.create_user("short_pass_user", password_hash=pwd_context.hash(curr_pass))
+
+        # 7 ASCII characters
+        resp = self.client.post(
+            "/change-password",
+            json={
+                "current_password": curr_pass,
+                "new_password": "short_7",
+                "new_password_confirm": "short_7",
+            },
+            headers=self.auth_headers("short_pass_user"),
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("at least 8 characters", resp.json().get("detail", ""))
+
+    def test_change_password_exceeding_72_utf8_bytes_rejected(self):
+        """New password exceeding 72 UTF-8 bytes is rejected with HTTP 400 without truncation."""
+        curr_pass = "CurrentPass123!"
+        self.create_user("long_pass_user", password_hash=pwd_context.hash(curr_pass))
+
+        over_72 = "A" * 73
+        resp = self.client.post(
+            "/change-password",
+            json={
+                "current_password": curr_pass,
+                "new_password": over_72,
+                "new_password_confirm": over_72,
+            },
+            headers=self.auth_headers("long_pass_user"),
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("exceeds maximum", resp.json().get("detail", ""))
+
+    def test_change_password_exactly_72_utf8_bytes_accepted(self):
+        """New password of exactly 72 UTF-8 bytes is accepted."""
+        curr_pass = "CurrentPass123!"
+        exact_72 = "Z" * 72
+        user = self.create_user("exact_72_user", password_hash=pwd_context.hash(curr_pass))
+
+        resp = self.client.post(
+            "/change-password",
+            json={
+                "current_password": curr_pass,
+                "new_password": exact_72,
+                "new_password_confirm": exact_72,
+            },
+            headers=self.auth_headers("exact_72_user"),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        self.db.refresh(user)
+        self.assertTrue(verify_password(exact_72, user.password_hash))
+
+    def test_change_password_multibyte_utf8_measured_by_bytes(self):
+        """Multibyte UTF-8 candidate passwords are measured strictly by byte length."""
+        curr_pass = "CurrentPass123!"
+        self.create_user("multibyte_user", password_hash=pwd_context.hash(curr_pass))
+
+        # 2 kanji = 6 bytes (< 8) -> rejected
+        two_kanji = "日本"
+        resp_short = self.client.post(
+            "/change-password",
+            json={
+                "current_password": curr_pass,
+                "new_password": two_kanji,
+                "new_password_confirm": two_kanji,
+            },
+            headers=self.auth_headers("multibyte_user"),
+        )
+        self.assertEqual(resp_short.status_code, 400)
+
+        # 3 kanji = 9 bytes (>= 8) -> accepted
+        three_kanji = "日本語"
+        resp_ok = self.client.post(
+            "/change-password",
+            json={
+                "current_password": curr_pass,
+                "new_password": three_kanji,
+                "new_password_confirm": three_kanji,
+            },
+            headers=self.auth_headers("multibyte_user"),
+        )
+        self.assertEqual(resp_ok.status_code, 200)
+
+        # 25 kanji = 75 bytes (> 72) -> rejected
+        twenty_five_kanji = "語" * 25
+        resp_long = self.client.post(
+            "/change-password",
+            json={
+                "current_password": three_kanji,
+                "new_password": twenty_five_kanji,
+                "new_password_confirm": twenty_five_kanji,
+            },
+            headers=self.auth_headers("multibyte_user"),
+        )
+        self.assertEqual(resp_long.status_code, 400)
+
+    def test_change_password_unauthorized_rejected(self):
+        """Unauthenticated requests to change-password must be rejected with HTTP 401."""
+        # Missing auth header
+        resp_no_auth = self.client.post(
+            "/change-password",
+            json={
+                "current_password": "pass",
+                "new_password": "new_password_123",
+                "new_password_confirm": "new_password_123",
+            },
+        )
+        self.assertEqual(resp_no_auth.status_code, 401)
+
+        # Invalid token
+        resp_bad_auth = self.client.post(
+            "/change-password",
+            json={
+                "current_password": "pass",
+                "new_password": "new_password_123",
+                "new_password_confirm": "new_password_123",
+            },
+            headers={"Authorization": "Bearer invalid.fake.token"},
+        )
+        self.assertEqual(resp_bad_auth.status_code, 401)
+
+    def test_change_password_authentication_flow_after_change(self):
+        """Old password fails login after change, and new password succeeds."""
+        old_pass = "InitialPass123!"
+        new_pass = "UpdatedPass456!"
+        self.create_user("flow_user", password_hash=pwd_context.hash(old_pass))
+
+        # Successfully change password
+        resp = self.client.post(
+            "/change-password",
+            json={
+                "current_password": old_pass,
+                "new_password": new_pass,
+                "new_password_confirm": new_pass,
+            },
+            headers=self.auth_headers("flow_user"),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        # Old password login returns 401
+        resp_old = self.client.post("/login", json={"username": "flow_user", "password": old_pass})
+        self.assertEqual(resp_old.status_code, 401)
+        self.assertEqual(resp_old.json().get("detail"), "Invalid credentials")
+
+        # New password login returns 200 with access token
+        resp_new = self.client.post("/login", json={"username": "flow_user", "password": new_pass})
+        self.assertEqual(resp_new.status_code, 200)
+        self.assertIn("access_token", resp_new.json())
+
+    def test_change_password_existing_jwt_remains_valid(self):
+        """Existing JWT token remains valid for accessing protected endpoints after password change."""
+        old_pass = "SessionPass123!"
+        new_pass = "SessionPass456!"
+        self.create_user("session_user", password_hash=pwd_context.hash(old_pass))
+
+        # Create session token before changing password
+        token = create_access_token(
+            data={"sub": "session_user"},
+            expires_delta=timedelta(minutes=30),
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Change password using this token
+        resp = self.client.post(
+            "/change-password",
+            json={
+                "current_password": old_pass,
+                "new_password": new_pass,
+                "new_password_confirm": new_pass,
+            },
+            headers=headers,
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        # The same token continues to work for protected endpoints
+        me_resp = self.client.get("/me", headers=headers)
+        self.assertEqual(me_resp.status_code, 200)
+        self.assertEqual(me_resp.json(), {"username": "session_user"})
+
+        prof_resp = self.client.get("/profile/", headers=headers)
+        self.assertEqual(prof_resp.status_code, 200)
+        self.assertEqual(prof_resp.json().get("username"), "session_user")
+
+    def test_failed_changes_do_not_modify_stored_hash(self):
+        """Stored password hash is never modified on validation or verification failure."""
+        current_pass = "GuardedPassword123!"
+        original_hash = pwd_context.hash(current_pass)
+        user = self.create_user("guarded_user", password_hash=original_hash)
+        headers = self.auth_headers("guarded_user")
+
+        # Multiple failed attempts:
+        # 1. Wrong current password
+        self.client.post(
+            "/change-password",
+            json={"current_password": "Wrong!", "new_password": "ValidNewPass123!", "new_password_confirm": "ValidNewPass123!"},
+            headers=headers,
+        )
+        # 2. Confirmation mismatch
+        self.client.post(
+            "/change-password",
+            json={"current_password": current_pass, "new_password": "ValidNewPass123!", "new_password_confirm": "Mismatch123!"},
+            headers=headers,
+        )
+        # 3. Too short
+        self.client.post(
+            "/change-password",
+            json={"current_password": current_pass, "new_password": "short", "new_password_confirm": "short"},
+            headers=headers,
+        )
+        # 4. Too long
+        self.client.post(
+            "/change-password",
+            json={"current_password": current_pass, "new_password": "X" * 80, "new_password_confirm": "X" * 80},
+            headers=headers,
+        )
+
+        # Stored hash remains identical byte-for-byte
+        self.db.refresh(user)
+        self.assertEqual(user.password_hash, original_hash)
+
+        # Login with original password still works
+        login_resp = self.client.post("/login", json={"username": "guarded_user", "password": current_pass})
+        self.assertEqual(login_resp.status_code, 200)
+
+    def test_legacy_user_can_change_password(self):
+        """A legacy user with a short weak password (e.g. '1234') can update to a compliant password."""
+        legacy_pass = "1234"
+        compliant_pass = "CompliantPass_2026!"
+        user = self.create_user("legacy_changer", password_hash=pwd_context.hash(legacy_pass))
+
+        resp = self.client.post(
+            "/change-password",
+            json={
+                "current_password": legacy_pass,
+                "new_password": compliant_pass,
+                "new_password_confirm": compliant_pass,
+            },
+            headers=self.auth_headers("legacy_changer"),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        # Verify login now works with compliant password and fails with legacy password
+        self.assertEqual(
+            self.client.post("/login", json={"username": "legacy_changer", "password": legacy_pass}).status_code,
+            401,
+        )
+        self.assertEqual(
+            self.client.post("/login", json={"username": "legacy_changer", "password": compliant_pass}).status_code,
+            200,
+        )
+
+    def test_missing_or_empty_fields_rejected(self):
+        """Missing or empty fields return HTTP 400 or 422."""
+        curr_pass = "CurrentPass123!"
+        self.create_user("empty_field_user", password_hash=pwd_context.hash(curr_pass))
+        headers = self.auth_headers("empty_field_user")
+
+        # Empty current password
+        resp_empty_curr = self.client.post(
+            "/change-password",
+            json={"current_password": "", "new_password": "ValidNewPass123!", "new_password_confirm": "ValidNewPass123!"},
+            headers=headers,
+        )
+        self.assertEqual(resp_empty_curr.status_code, 400)
+        self.assertIn("Current password is required", resp_empty_curr.json().get("detail", ""))
+
+        # Empty new password
+        resp_empty_new = self.client.post(
+            "/change-password",
+            json={"current_password": curr_pass, "new_password": "", "new_password_confirm": ""},
+            headers=headers,
+        )
+        self.assertEqual(resp_empty_new.status_code, 400)
+        self.assertIn("New password is required", resp_empty_new.json().get("detail", ""))
+
+        # Empty confirmation
+        resp_empty_conf = self.client.post(
+            "/change-password",
+            json={"current_password": curr_pass, "new_password": "ValidNewPass123!", "new_password_confirm": ""},
+            headers=headers,
+        )
+        self.assertEqual(resp_empty_conf.status_code, 400)
+        self.assertIn("Password confirmation is required", resp_empty_conf.json().get("detail", ""))
+
+        # Missing field from JSON body entirely -> 422
+        resp_missing = self.client.post(
+            "/change-password",
+            json={"current_password": curr_pass, "new_password": "ValidNewPass123!"},
+            headers=headers,
+        )
+        self.assertEqual(resp_missing.status_code, 422)
+

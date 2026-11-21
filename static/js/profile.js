@@ -130,3 +130,62 @@ async function handleProfilePicChange(input) {
     // reset input
     input.value = "";
 }
+
+async function handleChangePassword() {
+    const currentPassInput = document.getElementById("change-current-password");
+    const newPassInput = document.getElementById("change-new-password");
+    const confirmPassInput = document.getElementById("change-confirm-password");
+    const btn = document.getElementById("change-password-btn");
+
+    const currentPass = currentPassInput ? currentPassInput.value : "";
+    const newPass = newPassInput ? newPassInput.value : "";
+    const confirmPass = confirmPassInput ? confirmPassInput.value : "";
+
+    if (!currentPass || !newPass || !confirmPass) {
+        return showToast("Please fill all password fields", "error");
+    }
+
+    if (newPass !== confirmPass) {
+        return showToast("New password and confirmation do not match", "error");
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = "Changing...";
+    }
+
+    try {
+        const authToken = (typeof token !== "undefined" && token) ? token : (typeof AppState !== "undefined" && AppState.token ? AppState.token : "");
+        const res = await fetch("/change-password", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${authToken}`
+            },
+            body: JSON.stringify({
+                current_password: currentPass,
+                new_password: newPass,
+                new_password_confirm: confirmPass
+            })
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            showToast("Password changed successfully", "success");
+            if (currentPassInput) currentPassInput.value = "";
+            if (newPassInput) newPassInput.value = "";
+            if (confirmPassInput) confirmPassInput.value = "";
+        } else {
+            showToast(data.detail || "Error changing password", "error");
+        }
+    } catch (e) {
+        showToast("Server error", "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = "Change Password";
+        }
+    }
+}
+

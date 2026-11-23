@@ -1,5 +1,321 @@
 :root {
-    /* Colors */
+    /* ==========================================================================
+       1. BASE PALETTE
+       Raw color values serving as primitives for semantic tokens.
+       ========================================================================== */
+    /* Neutrals (Dark Grayscale Palette) */
+    --palette-neutral-950: #0a0a0a;
+    --palette-neutral-900: #0f0f0f;
+    --palette-neutral-850: #121212;
+    --palette-neutral-800: #1e1e1e;
+    --palette-neutral-750: #252525;
+    --palette-neutral-700: #2a2a2a;
+    --palette-neutral-650: #333333;
+    --palette-neutral-600: #444444;
+    --palette-neutral-500: #666666;
+    --palette-neutral-400: #888888;
+    --palette-neutral-300: #aaaaaa;
+    --palette-neutral-200: #cccccc;
+    --palette-neutral-100: #e0e0e0;
+    --palette-neutral-50: #f5f5f5;
+    --palette-neutral-0: #ffffff;
+
+    /* Primary Accent Family (ChatSpic Blue) */
+    --palette-blue-400: #339cff;
+    --palette-blue-500: #0084ff;
+    --palette-blue-600: #0073e6;
+    --palette-blue-700: #0060c2;
+    --palette-blue-subtle: rgba(0, 132, 255, 0.12);
+    --palette-blue-subtle-hover: rgba(0, 132, 255, 0.22);
+    --palette-blue-focus: rgba(0, 132, 255, 0.50);
+
+    /* Feedback Primitives */
+    --palette-green-500: #2ecc71;
+    --palette-green-600: #27ae60;
+    --palette-green-subtle: rgba(46, 204, 113, 0.14);
+
+    --palette-amber-500: #f39c12;
+    --palette-amber-600: #e67e22;
+    --palette-amber-subtle: rgba(243, 156, 18, 0.14);
+
+    --palette-red-500: #d9534f;
+    --palette-red-600: #c9302c;
+    --palette-red-subtle: rgba(217, 83, 79, 0.14);
+
+    --palette-cyan-500: #17a2b8;
+    --palette-cyan-subtle: rgba(23, 162, 184, 0.14);
+
+    /* ==========================================================================
+       2. SEMANTIC COLOR TOKENS
+       Contextual tokens mapped to the base palette for consistent dark-theme UI.
+       ========================================================================== */
+    /* Application Background & Surfaces */
+    --color-bg-app: var(--palette-neutral-850);
+    --color-surface-primary: var(--palette-neutral-800);
+    --color-surface-secondary: var(--palette-neutral-750);
+    --color-surface-elevated: var(--palette-neutral-700);
+    --color-surface-panel: var(--palette-neutral-900);
+
+    /* Typography & Text */
+    --color-text-primary: var(--palette-neutral-100);
+    --color-text-secondary: var(--palette-neutral-300);
+    --color-text-muted: var(--palette-neutral-400);
+    --color-text-disabled: rgba(255, 255, 255, 0.38);
+    --color-text-emphasis: var(--palette-neutral-0);
+    --color-text-inverse: var(--palette-neutral-950);
+
+    /* Primary Brand Accent */
+    --color-accent-primary: var(--palette-blue-500);
+    --color-accent-hover: var(--palette-blue-600);
+    --color-accent-active: var(--palette-blue-700);
+    --color-accent-subtle: var(--palette-blue-subtle);
+    --color-accent-subtle-hover: var(--palette-blue-subtle-hover);
+    --color-accent-contrast: #ffffff;
+
+    /* Status & Feedback */
+    --color-feedback-success: var(--palette-green-500);
+    --color-feedback-success-subtle: var(--palette-green-subtle);
+    --color-feedback-warning: var(--palette-amber-500);
+    --color-feedback-warning-subtle: var(--palette-amber-subtle);
+    --color-warning: var(--palette-amber-500);
+    --color-feedback-danger: var(--palette-red-500);
+    --color-feedback-danger-subtle: var(--palette-red-subtle);
+    --color-feedback-info: var(--palette-blue-500);
+    --color-feedback-info-subtle: var(--palette-blue-subtle);
+    --color-info: var(--palette-blue-500);
+
+    /* Borders & Dividers */
+    --color-border-primary: var(--palette-neutral-700);
+    --color-border-subtle: var(--palette-neutral-650);
+    --color-border-muted: rgba(255, 255, 255, 0.08);
+
+    /* Focus & Overlays */
+    --color-focus-ring: var(--palette-blue-focus);
+    --color-overlay-bg: rgba(0, 0, 0, 0.70);
+    --color-overlay-heavy: rgba(0, 0, 0, 0.85);
+
+    /* ==========================================================================
+       3. TYPOGRAPHY TOKENS
+       Font families, scale, weights, line-heights, letter-spacing and roles.
+       ========================================================================== */
+    /* Font Stacks */
+    --font-family-base: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+    --font-family-fallback: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-family-mono: 'Consolas', 'Courier New', Courier, monospace;
+
+    /* Font Sizes Scale */
+    --font-size-2xs: 10px;
+    --font-size-xs: 11px;
+    --font-size-sm: 12px;
+    --font-size-md: 13px;
+    --font-size-base: 14px;
+    --font-size-body: 15px;
+    --font-size-lg: 16px;
+    --font-size-xl: 18px;
+    --font-size-2xl: 20px;
+    --font-size-3xl: 24px;
+    --font-size-4xl: 32px;
+    --font-size-5xl: 48px;
+
+    /* Font Weights */
+    --font-weight-regular: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    /* Line Heights */
+    --line-height-none: 1;
+    --line-height-tight: 1.25;
+    --line-height-snug: 1.375;
+    --line-height-normal: 1.5;
+    --line-height-relaxed: 1.625;
+
+    /* Letter Spacing */
+    --letter-spacing-tight: -0.5px;
+    --letter-spacing-normal: 0;
+    --letter-spacing-wide: 0.5px;
+    --letter-spacing-wider: 1px;
+
+    /* Semantic Typography Roles */
+    --typography-page-title-font-size: var(--font-size-3xl);
+    --typography-page-title-font-weight: var(--font-weight-bold);
+    --typography-page-title-line-height: var(--line-height-tight);
+
+    --typography-section-heading-font-size: var(--font-size-sm);
+    --typography-section-heading-font-weight: var(--font-weight-bold);
+    --typography-section-heading-letter-spacing: var(--letter-spacing-wider);
+
+    --typography-component-heading-font-size: var(--font-size-lg);
+    --typography-component-heading-font-weight: var(--font-weight-semibold);
+    --typography-component-heading-line-height: var(--line-height-snug);
+
+    --typography-body-font-size: var(--font-size-base);
+    --typography-body-font-weight: var(--font-weight-regular);
+    --typography-body-line-height: var(--line-height-normal);
+
+    --typography-secondary-font-size: var(--font-size-md);
+    --typography-secondary-font-weight: var(--font-weight-regular);
+    --typography-secondary-line-height: var(--line-height-normal);
+
+    --typography-caption-font-size: var(--font-size-sm);
+    --typography-caption-font-weight: var(--font-weight-regular);
+    --typography-caption-line-height: var(--line-height-snug);
+
+    --typography-meta-font-size: var(--font-size-xs);
+    --typography-meta-font-weight: var(--font-weight-regular);
+    --typography-meta-line-height: var(--line-height-none);
+
+    --typography-button-font-size: var(--font-size-base);
+    --typography-button-font-weight: var(--font-weight-semibold);
+    --typography-button-line-height: var(--line-height-none);
+
+    /* ==========================================================================
+       4. SPACING TOKENS
+       Predictable spacing scale based on 4px rhythm and semantic roles.
+       ========================================================================== */
+    /* 4px Rhythm Scale */
+    --space-0: 0px;
+    --space-0-5: 2px;
+    --space-1: 4px;
+    --space-1-5: 6px;
+    --space-2: 8px;
+    --space-2-5: 10px;
+    --space-3: 12px;
+    --space-3-5: 14px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-7: 28px;
+    --space-8: 32px;
+    --space-10: 40px;
+    --space-12: 48px;
+    --space-16: 64px;
+
+    /* Semantic Spacing Roles */
+    --space-inline-gap: var(--space-1);
+    --space-icon-gap: var(--space-2);
+    --space-component-compact: var(--space-2-5);
+    --space-component-standard: var(--space-4);
+    --space-section: var(--space-6);
+    --space-page: var(--space-8);
+
+    /* ==========================================================================
+       5. BORDER-RADIUS TOKENS
+       Standard radii scale and semantic component mappings.
+       ========================================================================== */
+    /* Radii Scale */
+    --radius-none: 0px;
+    --radius-xs: 4px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+    --radius-2xl: 24px;
+    --radius-full: 9999px;
+    --radius-circle: 50%;
+
+    /* Semantic Radii Roles */
+    --radius-control-sm: var(--radius-xs);
+    --radius-input: var(--radius-sm);
+    --radius-button: var(--radius-sm);
+    --radius-card: var(--radius-lg);
+    --radius-panel: var(--radius-lg);
+    --radius-modal: var(--radius-2xl);
+    --radius-pill: var(--radius-full);
+    --radius-avatar: var(--radius-circle);
+
+    /* ==========================================================================
+       6. SHADOW AND ELEVATION TOKENS
+       Restrained elevation levels appropriate for dark interface surfaces.
+       ========================================================================== */
+    --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.25);
+    --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.35);
+    --elevation-3: 0 8px 24px rgba(0, 0, 0, 0.45);
+    --elevation-4: 0 16px 48px rgba(0, 0, 0, 0.65);
+
+    /* Semantic Shadows */
+    --shadow-subtle: var(--elevation-1);
+    --shadow-card: var(--elevation-2);
+    --shadow-floating: var(--elevation-2);
+    --shadow-dropdown: var(--elevation-3);
+    --shadow-popover: var(--elevation-3);
+    --shadow-modal: var(--elevation-4);
+    --shadow-toast: 0 4px 12px rgba(0, 0, 0, 0.40);
+
+    /* ==========================================================================
+       7. INTERACTION AND TRANSITION TOKENS
+       Motion durations, easings, focus-ring styling, and interactive opacity.
+       ========================================================================== */
+    /* Durations */
+    --duration-fast: 150ms;
+    --duration-normal: 200ms;
+    --duration-slow: 300ms;
+
+    /* Easings */
+    --ease-default: ease;
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-out: cubic-bezier(0, 0, 0.2, 1);
+    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+
+    /* Transitions */
+    --transition-fast: var(--duration-fast) var(--ease-default);
+    --transition-standard: var(--duration-normal) var(--ease-default);
+    --transition-slow: var(--duration-slow) var(--ease-default);
+
+    /* Focus Ring Styling */
+    --focus-ring-width: 2px;
+    --focus-ring-offset: 2px;
+    --focus-ring-style: solid;
+    --focus-ring: 0 0 0 var(--focus-ring-width) var(--color-focus-ring);
+
+    /* Interactive Opacity */
+    --opacity-disabled: 0.38;
+    --opacity-muted: 0.60;
+    --opacity-hover: 0.85;
+
+    /* ==========================================================================
+       8. LAYOUT TOKENS
+       Reusable dimensions and z-index layers reflecting existing architecture.
+       ========================================================================== */
+    /* Layout Dimensions */
+    --header-height: 60px;
+    --sidebar-width: 320px;
+    --content-max-width: 1200px;
+    --modal-max-width: 440px;
+    --auth-box-max-width: 350px;
+    --chat-message-max-width: 75%;
+
+    /* Control Dimensions */
+    --control-height-sm: 32px;
+    --control-height-md: 40px;
+    --control-height-lg: 48px;
+
+    /* Component Element Sizes */
+    --icon-btn-size: 38px;
+    --call-btn-size: 36px;
+    --avatar-size-sm: 32px;
+    --avatar-size-md: 48px;
+    --avatar-size-lg: 64px;
+
+    /* Z-Index Layer Scale */
+    --z-base: 1;
+    --z-surface-elevated: 2;
+    --z-sticky: 10;
+    --z-sidebar: 20;
+    --z-mobile-view: 50;
+    --z-dropdown: 100;
+    --z-modal-backdrop: 900;
+    --z-modal: 1000;
+    --z-toast: 2000;
+    --z-call-overlay: 2500;
+    --z-screen-takeover: 3000;
+    --z-max: 10000;
+
+    /* ==========================================================================
+       9. LEGACY COMPATIBILITY ALIASES
+       Retain every original custom property name and exact value to ensure
+       100% backward compatibility with all existing stylesheets and components.
+       ========================================================================== */
+    /* Original Color Variables */
     --color-bg: #121212;
     --color-surface: #1e1e1e;
     --color-panel: #0f0f0f;
@@ -11,14 +327,14 @@
     --color-danger: #d9534f;
     --color-border: #2a2a2a;
 
-    /* Spacing */
+    /* Original Spacing Variables */
     --spacing-xs: 5px;
     --spacing-sm: 10px;
     --spacing: 15px;
     --spacing-md: 20px;
     --spacing-lg: 30px;
 
-    /* Border radius */
+    /* Original Border Radius Variables */
     --radius: 16px;
     --radius-sm: 8px;
 }

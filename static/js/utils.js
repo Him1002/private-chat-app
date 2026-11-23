@@ -188,6 +188,106 @@ function getDocTypeDetails(filename) {
     }
 }
 
+const YOUTUBE_ALLOWED_HOSTS = new Set([
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "youtu.be",
+    "www.youtu.be",
+    "youtube-nocookie.com",
+    "www.youtube-nocookie.com"
+]);
+const YOUTUBE_VIDEO_ID_REGEX = /^[A-Za-z0-9_-]{11}$/;
+
+function parseYouTubeTimestamp(timeParam) {
+    if (!timeParam || typeof timeParam !== "string") return null;
+    const clean = timeParam.trim().toLowerCase();
+    if (/^\d+$/.test(clean)) return parseInt(clean, 10);
+    const match = clean.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$/);
+    if (!match) return null;
+    const hours = parseInt(match[1] || "0", 10);
+    const minutes = parseInt(match[2] || "0", 10);
+    const seconds = parseInt(match[3] || "0", 10);
+    const total = hours * 3600 + minutes * 60 + seconds;
+    return total > 0 ? total : null;
+}
+
+function parseYouTubeVideo(text) {
+    if (!text || typeof text !== "string") return null;
+    const urlRegex = /(?:https?:\/\/[^\s<>"'`]+|(?:\b(?:www\.|m\.)?youtube(?:-nocookie)?\.com\/[^\s<>"'`]+|\byoutu\.be\/[^\s<>"'`]+))/gi;
+    const matches = text.match(urlRegex);
+    if (!matches) return null;
+
+    for (const rawMatch of matches) {
+        const cleanUrl = rawMatch.replace(/[.,!?:;)\]"']+$/, "");
+        if (!cleanUrl) continue;
+
+        let candidateUrl = cleanUrl;
+        if (!/^https?:\/\//i.test(candidateUrl)) {
+            candidateUrl = "https://" + candidateUrl;
+        }
+
+        let urlObj;
+        try {
+            urlObj = new URL(candidateUrl);
+        } catch (_) {
+            continue;
+        }
+
+        if (urlObj.protocol !== "http:" && urlObj.protocol !== "https:") {
+            continue;
+        }
+
+        const hostname = urlObj.hostname.toLowerCase();
+        if (!YOUTUBE_ALLOWED_HOSTS.has(hostname)) {
+            continue;
+        }
+
+        let candidateId = "";
+        let isShort = false;
+        const parts = urlObj.pathname.split("/").filter(Boolean);
+
+        if (hostname === "youtu.be" || hostname === "www.youtu.be") {
+            candidateId = parts[0] || "";
+            isShort = false;
+        } else {
+            if (parts[0] === "shorts") {
+                candidateId = parts[1] || "";
+                isShort = true;
+            } else if (parts[0] === "embed") {
+                candidateId = parts[1] || "";
+                isShort = false;
+            } else if (parts[0] === "watch" || urlObj.pathname === "/watch") {
+                candidateId = urlObj.searchParams.get("v") || "";
+                isShort = false;
+            }
+        }
+
+        if (!candidateId || !YOUTUBE_VIDEO_ID_REGEX.test(candidateId)) {
+            continue;
+        }
+
+        const rawTime = urlObj.searchParams.get("t") || urlObj.searchParams.get("start");
+        const startSec = parseYouTubeTimestamp(rawTime);
+        const startParam = startSec ? `&start=${startSec}` : "";
+
+        return {
+            videoId: candidateId,
+            isShort: isShort,
+            url: candidateUrl,
+            embedUrl: `https://www.youtube-nocookie.com/embed/${candidateId}?autoplay=1&rel=0${startParam}`,
+            thumbnailUrl: isShort
+                ? `https://i.ytimg.com/vi/${candidateId}/oardefault.jpg`
+                : `https://i.ytimg.com/vi/${candidateId}/hqdefault.jpg`,
+            watchUrl: isShort
+                ? `https://www.youtube.com/shorts/${candidateId}`
+                : `https://www.youtube.com/watch?v=${candidateId}${startSec ? `&t=${startSec}s` : ""}`
+        };
+    }
+
+    return null;
+}
+
 if (typeof module !== "undefined" && module.exports) {
     module.exports = {
         escapeHtml,
@@ -200,7 +300,9 @@ if (typeof module !== "undefined" && module.exports) {
         seedSecureMediaCache,
         revokeSecureMediaCache,
         fetchSecureMediaBlobUrl,
-        getDocTypeDetails
+        getDocTypeDetails,
+        parseYouTubeVideo,
+        parseYouTubeTimestamp
     };
 }
 

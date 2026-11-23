@@ -1445,5 +1445,231 @@
     color: #ffffff;
 }
 
+/* ==========================================================================
+   ChatSpic V2 Rich External Media Embeds (YouTube Videos & Shorts)
+   ========================================================================== */
+
+.msg-youtube-card {
+    position: relative;
+    width: 100%;
+    max-width: 320px;
+    aspect-ratio: 16 / 9;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #0d0d10;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.msg-youtube-card:hover {
+    border-color: rgba(255, 0, 0, 0.45);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+}
+
+.msg-youtube-card.has-iframe {
+    cursor: default;
+}
+
+.msg-youtube-card.has-iframe:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.msg-youtube-card.is-short {
+    aspect-ratio: 9 / 16;
+    max-width: 220px;
+    max-height: 380px;
+}
+
+.msg-youtube-topbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0) 100%);
+    z-index: 2;
+    pointer-events: none;
+}
+
+.msg-youtube-badge {
+    font-size: 11px;
+    font-weight: 700;
+    color: #ffffff;
+    background: rgba(255, 0, 0, 0.85);
+    padding: 2px 7px;
+    border-radius: 6px;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
+
+.msg-youtube-card.is-short .msg-youtube-badge {
+    background: #ff0033;
+}
+
+.msg-youtube-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    pointer-events: auto;
+}
+
+.msg-youtube-fs-btn {
+    font-size: 13px;
+    line-height: 1;
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 2px 7px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.msg-youtube-fs-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    color: #ff4444;
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+.msg-youtube-ext-link {
+    font-size: 11px;
+    font-weight: 600;
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 2px 8px;
+    border-radius: 6px;
+    text-decoration: none;
+    pointer-events: auto;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.msg-youtube-ext-link:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #ff4444;
+}
+
+.msg-youtube-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    display: block;
+    transition: filter 0.2s ease;
+}
+
+.msg-youtube-card:hover .msg-youtube-thumb {
+    filter: brightness(0.88);
+}
+
+.msg-youtube-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #18181c;
+    color: #888888;
+    font-size: 13px;
+    gap: 6px;
+    padding: 16px;
+    text-align: center;
+}
+
+.msg-youtube-play-btn {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 0, 0, 0.9);
+    color: #ffffff;
+    border: none;
+    padding: 9px 18px;
+    border-radius: 24px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
+    z-index: 2;
+    transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.msg-youtube-card:hover .msg-youtube-play-btn {
+    transform: translate(-50%, -50%) scale(1.06);
+    background: #ff0000;
+    box-shadow: 0 6px 22px rgba(255, 0, 0, 0.4);
+}
+
+.msg-youtube-play-icon {
+    font-size: 14px;
+    line-height: 1;
+}
+
+.msg-youtube-play-text {
+    line-height: 1;
+    letter-spacing: 0.3px;
+}
+
+.msg-youtube-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+    border-radius: 12px;
+}
+
+/* Fullscreen mode styling */
+.msg-youtube-card:fullscreen,
+.msg-youtube-card:-webkit-full-screen {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    border: none !important;
+    background: #000000 !important;
+    aspect-ratio: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.msg-youtube-card:fullscreen .msg-youtube-iframe,
+.msg-youtube-card:-webkit-full-screen .msg-youtube-iframe {
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 0;
+}
+
+.msg-youtube-card.is-short:fullscreen .msg-youtube-iframe,
+.msg-youtube-card.is-short:-webkit-full-screen .msg-youtube-iframe {
+    width: 100%;
+    height: 100%;
+    max-width: calc(100vh * (9 / 16));
+    margin: 0 auto;
+}
+
+
+
 
 

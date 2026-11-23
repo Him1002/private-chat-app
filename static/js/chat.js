@@ -307,6 +307,13 @@ function startChat(friend, element) {
     //document.getElementById("chat-status").innerText = formatLastSeen(friend.last_seen);
 
     // 🔐 CRITICAL: Wipe the "Welcome Screen" or old messages before loading new ones
+    if (typeof document !== "undefined" && document.fullscreenElement) {
+        if (document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+        } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+        }
+    }
     document.getElementById("messages").innerHTML = "";
 
     document.getElementById("msg-input").disabled = false;
@@ -470,6 +477,20 @@ function applyDeletedState(messageEl, deletedAt) {
 
     const fileEl = messageEl.querySelector(".msg-file-card");
     if (fileEl) fileEl.remove();
+
+    const ytCard = messageEl.querySelector(".msg-youtube-card");
+    if (ytCard) {
+        if (typeof document !== "undefined" && (document.fullscreenElement === ytCard || document.webkitFullscreenElement === ytCard)) {
+            if (document.exitFullscreen) {
+                document.exitFullscreen().catch(() => {});
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            }
+        }
+        const iframe = ytCard.querySelector("iframe");
+        if (iframe) iframe.src = "";
+        ytCard.remove();
+    }
 
     const editedEl = messageEl.querySelector(".msg-edited");
     if (editedEl) editedEl.remove();
@@ -635,6 +656,12 @@ function applyMessageText(messageEl, text) {
     let textEl = messageEl.querySelector(".msg-text");
     if (!normalizedText) {
         if (textEl) textEl.remove();
+        const existingCard = messageEl.querySelector(".msg-youtube-card");
+        if (existingCard) {
+            const iframe = existingCard.querySelector("iframe");
+            if (iframe) iframe.src = "";
+            existingCard.remove();
+        }
         return;
     }
 
@@ -656,6 +683,53 @@ function applyMessageText(messageEl, text) {
     }
 
     textEl.textContent = normalizedText;
+
+    const existingCard = messageEl.querySelector(".msg-youtube-card");
+    const nextYtData = (typeof parseYouTubeVideo === "function") ? parseYouTubeVideo(normalizedText) : null;
+
+    if (nextYtData) {
+        if (existingCard) {
+            if (existingCard.dataset.videoId !== nextYtData.videoId || existingCard.dataset.isShort !== String(nextYtData.isShort)) {
+                if (typeof document !== "undefined" && (document.fullscreenElement === existingCard || document.webkitFullscreenElement === existingCard)) {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen().catch(() => {});
+                    } else if (document.webkitExitFullscreen) {
+                        document.webkitExitFullscreen();
+                    }
+                }
+                const newCard = renderYouTubePreviewCard(nextYtData);
+                if (newCard) {
+                    const iframe = existingCard.querySelector("iframe");
+                    if (iframe) iframe.src = "";
+                    existingCard.replaceWith(newCard);
+                }
+            }
+        } else {
+            const newCard = renderYouTubePreviewCard(nextYtData);
+            if (newCard) {
+                const editedEl = messageEl.querySelector(".msg-edited");
+                const timeEl = messageEl.querySelector(".msg-time");
+                const triggerEl = messageEl.querySelector(".msg-menu-trigger");
+                const ref = editedEl || timeEl || triggerEl;
+                if (ref) {
+                    messageEl.insertBefore(newCard, ref);
+                } else {
+                    messageEl.appendChild(newCard);
+                }
+            }
+        }
+    } else if (existingCard) {
+        if (typeof document !== "undefined" && (document.fullscreenElement === existingCard || document.webkitFullscreenElement === existingCard)) {
+            if (document.exitFullscreen) {
+                document.exitFullscreen().catch(() => {});
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            }
+        }
+        const iframe = existingCard.querySelector("iframe");
+        if (iframe) iframe.src = "";
+        existingCard.remove();
+    }
 }
 
 function updateMessageContent(messageId, text, editedAt) {
@@ -1007,6 +1081,185 @@ async function downloadSecureFile(url, fileName) {
     } catch (err) {
         showToast("Error downloading file", "normal");
     }
+}
+
+function isFullscreenSupported() {
+    return Boolean(
+        typeof document !== "undefined" && (
+            document.fullscreenEnabled ||
+            document.webkitFullscreenEnabled ||
+            document.mozFullScreenEnabled ||
+            document.msFullscreenEnabled ||
+            (document.documentElement && (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen))
+        )
+    );
+}
+
+function toggleCardFullscreen(card) {
+    if (!card || typeof document === "undefined") return;
+    const isFullscreen = document.fullscreenElement === card ||
+                         document.webkitFullscreenElement === card ||
+                         document.mozFullScreenElement === card ||
+                         document.msFullscreenElement === card;
+    if (isFullscreen) {
+        if (document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+        } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+        } else if (document.mozCancelFullScreen) {
+            document.mozCancelFullScreen();
+        } else if (document.msExitFullscreen) {
+            document.msExitFullscreen();
+        }
+    } else {
+        if (card.requestFullscreen) {
+            card.requestFullscreen().catch(() => {});
+        } else if (card.webkitRequestFullscreen) {
+            card.webkitRequestFullscreen();
+        } else if (card.mozRequestFullScreen) {
+            card.mozRequestFullScreen();
+        } else if (card.msRequestFullscreen) {
+            card.msRequestFullscreen();
+        }
+    }
+}
+
+function renderYouTubePreviewCard(ytData) {
+    if (!ytData || !ytData.videoId) return null;
+
+    const card = document.createElement("div");
+    card.className = `msg-media-embed msg-youtube-card${ytData.isShort ? " is-short" : ""}`;
+    card.dataset.videoId = ytData.videoId;
+    card.dataset.isShort = ytData.isShort ? "true" : "false";
+
+    const topBar = document.createElement("div");
+    topBar.className = "msg-youtube-topbar";
+
+    const badge = document.createElement("span");
+    badge.className = "msg-youtube-badge";
+    badge.textContent = ytData.isShort ? "⚡ Shorts" : "▶ YouTube";
+    topBar.appendChild(badge);
+
+    const actionsWrap = document.createElement("div");
+    actionsWrap.className = "msg-youtube-actions";
+
+    if (isFullscreenSupported()) {
+        const fsBtn = document.createElement("button");
+        fsBtn.type = "button";
+        fsBtn.className = "msg-youtube-fs-btn";
+        fsBtn.title = "Fullscreen";
+        fsBtn.setAttribute("aria-label", "Toggle Fullscreen");
+        fsBtn.textContent = "⛶";
+        fsBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleCardFullscreen(card);
+        });
+        actionsWrap.appendChild(fsBtn);
+
+        const onFsChange = () => {
+            const isFs = typeof document !== "undefined" && (
+                document.fullscreenElement === card ||
+                document.webkitFullscreenElement === card ||
+                document.mozFullScreenElement === card ||
+                document.msFullscreenElement === card
+            );
+            fsBtn.textContent = isFs ? "✕" : "⛶";
+            fsBtn.title = isFs ? "Exit Fullscreen" : "Fullscreen";
+            fsBtn.setAttribute("aria-label", isFs ? "Exit Fullscreen" : "Fullscreen");
+        };
+        card.addEventListener("fullscreenchange", onFsChange);
+        card.addEventListener("webkitfullscreenchange", onFsChange);
+        card.addEventListener("mozfullscreenchange", onFsChange);
+        card.addEventListener("MSFullscreenChange", onFsChange);
+    }
+
+    const extLink = document.createElement("a");
+    extLink.className = "msg-youtube-ext-link";
+    extLink.href = ytData.watchUrl;
+    extLink.target = "_blank";
+    extLink.rel = "noopener noreferrer";
+    extLink.title = "Open in YouTube";
+    extLink.setAttribute("aria-label", "Open in YouTube");
+    extLink.textContent = "Open ↗";
+    extLink.addEventListener("click", (e) => {
+        e.stopPropagation();
+    });
+    actionsWrap.appendChild(extLink);
+    topBar.appendChild(actionsWrap);
+    card.appendChild(topBar);
+
+    const thumb = document.createElement("img");
+    thumb.className = "msg-youtube-thumb";
+    thumb.src = ytData.thumbnailUrl;
+    thumb.alt = ytData.isShort ? "YouTube Shorts preview" : "YouTube video preview";
+    thumb.loading = "lazy";
+
+    const fallback = document.createElement("div");
+    fallback.className = "msg-youtube-fallback";
+    fallback.style.display = "none";
+    const fallbackText = document.createElement("span");
+    fallbackText.textContent = "YouTube Preview Unavailable";
+    fallback.appendChild(fallbackText);
+
+    let hasFallenBackToHq = false;
+    thumb.onerror = () => {
+        if (ytData.isShort && !hasFallenBackToHq) {
+            hasFallenBackToHq = true;
+            thumb.src = `https://i.ytimg.com/vi/${ytData.videoId}/hqdefault.jpg`;
+            return;
+        }
+        thumb.style.display = "none";
+        fallback.style.display = "flex";
+    };
+
+    card.appendChild(thumb);
+    card.appendChild(fallback);
+
+    const playBtn = document.createElement("button");
+    playBtn.type = "button";
+    playBtn.className = "msg-youtube-play-btn";
+    playBtn.setAttribute("aria-label", "Load Video");
+
+    const playIcon = document.createElement("span");
+    playIcon.className = "msg-youtube-play-icon";
+    playIcon.textContent = "▶";
+
+    const playText = document.createElement("span");
+    playText.className = "msg-youtube-play-text";
+    playText.textContent = "Load Video";
+
+    playBtn.appendChild(playIcon);
+    playBtn.appendChild(playText);
+    card.appendChild(playBtn);
+
+    const loadIframe = (e) => {
+        if (e) e.stopPropagation();
+        if (card.querySelector("iframe")) return;
+
+        const iframe = document.createElement("iframe");
+        iframe.className = "msg-youtube-iframe";
+        iframe.src = ytData.embedUrl;
+        iframe.title = ytData.isShort ? "YouTube Shorts player" : "YouTube video player";
+        iframe.setAttribute("allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen");
+        iframe.setAttribute("allowfullscreen", "");
+        iframe.setAttribute("webkitallowfullscreen", "true");
+        iframe.setAttribute("mozallowfullscreen", "true");
+        iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-presentation allow-popups allow-forms");
+
+        thumb.style.display = "none";
+        fallback.style.display = "none";
+        playBtn.style.display = "none";
+
+        card.appendChild(iframe);
+        card.classList.add("has-iframe");
+    };
+
+    card.addEventListener("click", (e) => {
+        e.stopPropagation();
+        loadIframe(e);
+    });
+
+    return card;
 }
 
 function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messageId, status, readAt, editedAt, isDeleted = false, deletedAt = "", reactions = null, replyTo = null, videoUrl = null, fileUrl = null, fileName = null, fileSize = null, mediaType = null, voiceUrl = null) {
@@ -1386,6 +1639,17 @@ function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messag
         }
     }
 
+    // 4b. Rich External Media Embeds (YouTube Videos & Shorts)
+    if (!deleted && safeText && typeof parseYouTubeVideo === "function") {
+        const ytData = parseYouTubeVideo(safeText);
+        if (ytData) {
+            const ytCard = renderYouTubePreviewCard(ytData);
+            if (ytCard) {
+                div.appendChild(ytCard);
+            }
+        }
+    }
+
     // 5. Edited indicator
     if (!deleted && editedAt) {
         const editedEl = document.createElement("span");
@@ -1425,7 +1689,7 @@ function addMessage(sender, senderDisplayName, text, imageUrl, timestamp, messag
     div.appendChild(trigger);
 
     div.addEventListener("click", (event) => {
-        if (event.target.closest(".msg-menu-trigger") || event.target.closest(".message-action-menu") || event.target.closest(".message-action-item") || event.target.closest(".msg-reply-preview")) {
+        if (event.target.closest(".msg-menu-trigger") || event.target.closest(".message-action-menu") || event.target.closest(".message-action-item") || event.target.closest(".msg-reply-preview") || event.target.closest(".msg-youtube-card")) {
             return;
         }
         selectMessage(div);

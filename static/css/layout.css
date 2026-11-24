@@ -1,18 +1,82 @@
-#app-container { display: none; width: 100%; height: 100%; position: relative; }
-
-.sidebar { 
-    width: 320px; background: #1e1e1e; border-right: 1px solid #2a2a2a; 
-    display: flex; flex-direction: column; z-index: 20; 
+#app-container {
+    display: none;
+    width: 100%;
+    height: 100%;
+    position: relative;
+    flex-direction: row;
+    overflow: hidden;
 }
 
-.chat-area { 
-    flex: 1; display: flex; flex-direction: column; background: #0f0f0f; 
-    position: relative; z-index: 10; 
+/* ==========================================================================
+   Application Shell Layout (UI-02A)
+   ========================================================================== */
+
+/* Desktop Navigation Rail Shell */
+.app-nav-rail {
+    width: var(--nav-rail-width, 68px);
+    height: 100%;
+    background: var(--color-surface-panel, #0f0f0f);
+    border-right: 1px solid var(--color-border-primary, #2a2a2a);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+    z-index: var(--z-nav-rail, 25);
+    box-sizing: border-box;
+}
+
+/* Central Application Workspace */
+.app-workspace {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+    min-width: 0;
+    background: var(--color-bg-app, #121212);
+}
+
+/* Mobile Bottom Navigation Shell */
+.app-bottom-nav {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: calc(var(--bottom-nav-height, 58px) + env(safe-area-inset-bottom, 0px));
+    background: var(--color-surface-panel, #0f0f0f);
+    border-top: 1px solid var(--color-border-primary, #2a2a2a);
+    z-index: var(--z-bottom-nav, 60);
+    box-sizing: border-box;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.sidebar {
+    width: var(--sidebar-width, 320px);
+    background: var(--color-surface-primary, #1e1e1e);
+    border-right: 1px solid var(--color-border-primary, #2a2a2a);
+    display: flex;
+    flex-direction: column;
+    z-index: var(--z-sidebar, 20);
+    flex-shrink: 0;
+    height: 100%;
+}
+
+.chat-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-surface-panel, #0f0f0f);
+    position: relative;
+    z-index: var(--z-sticky, 10);
+    min-width: 0;
+    height: 100%;
 }
 
 .sidebar-header { background: #1e1e1e; display: flex; flex-direction: column; border-bottom: 1px solid #2a2a2a; }
-    
-.chat-header { 
+
+.chat-header {
     padding: 10px 15px; background: #2c2c2c; border-bottom: 1px solid #333; color: white;
     display: flex; align-items: center; justify-content: flex-start; height: 60px; gap: 10px; box-sizing: border-box;
 }
@@ -28,6 +92,23 @@
 
 /* --- MOBILE RESPONSIVE LOGIC --- */
 @media (max-width: 768px) {
+    #app-container {
+        flex-direction: column;
+    }
+
+    /* Hide Desktop Rail on Mobile */
+    .app-nav-rail {
+        display: none !important;
+    }
+
+    /* Workspace fills mobile viewport */
+    .app-workspace {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        overflow: hidden;
+    }
+
     /* Force Absolute Positioning */
     .sidebar { width: 100%; height: 100%; position: absolute; top: 0; left: 0; transition: transform 0.3s ease; }
     .chat-area { width: 100%; height: 100dvh; bottom: 0; position: absolute; top: 0; left: 0; }
@@ -45,21 +126,218 @@
 
     /* Back Button */
     #back-btn { display: block !important; font-size: 24px; background: none; border: none; color: white; padding-right: 15px; }
+
+    /* Mobile Bottom Navigation - Visible in list view, hidden in active chat view */
+    body.view-list .app-bottom-nav {
+        display: flex;
+    }
+
+    body.view-chat .app-bottom-nav {
+        display: none !important;
+    }
+
+    /* Reserve space so bottom navigation does not cover scrollable contacts in list view */
+    body.view-list .list-area {
+        padding-bottom: calc(var(--bottom-nav-height, 58px) + env(safe-area-inset-bottom, 0px));
+    }
+
+    /* Reserve space in Home workspace on mobile */
+    .workspace-home .home-scroll-area {
+        padding-bottom: calc(var(--bottom-nav-height, 58px) + env(safe-area-inset-bottom, 0px) + 24px);
+    }
+
+    /* Reserve space in People workspace on mobile */
+    .workspace-people .people-scroll-area {
+        padding-bottom: calc(var(--bottom-nav-height, 58px) + env(safe-area-inset-bottom, 0px) + 16px);
+    }
+
+    /* Reserve space in Placeholder workspace on mobile */
+    .workspace-placeholder .placeholder-scroll-area {
+        padding-bottom: calc(var(--bottom-nav-height, 58px) + env(safe-area-inset-bottom, 0px) + 24px);
+    }
+
+    /* Reserve space in Settings workspace on mobile */
+    .workspace-settings .settings-scroll-area {
+        padding-bottom: calc(var(--bottom-nav-height, 58px) + env(safe-area-inset-bottom, 0px) + 24px);
+    }
 }
 
-@media (min-width: 769px) { #back-btn { display: none; } }
+/* ==========================================================================
+   Dedicated Home Workspace Layout (UI-02F)
+   ========================================================================== */
+
+.workspace-home {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    min-width: 0;
+    background: var(--color-bg-app, #121212);
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+/* ==========================================================================
+   Dedicated People Workspace Layout (UI-02D)
+   ========================================================================== */
+
+.workspace-people {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    min-width: 0;
+    background: var(--color-bg-app, #121212);
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+/* ==========================================================================
+   Dedicated Placeholder Workspace Layout (UI-02F)
+   ========================================================================== */
+
+.workspace-placeholder {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    min-width: 0;
+    background: var(--color-bg-app, #121212);
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+/* ==========================================================================
+   Dedicated Settings Workspace Layout (UI-02E)
+   ========================================================================== */
+
+.workspace-settings {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    min-width: 0;
+    background: var(--color-bg-app, #121212);
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+/* Visibility toggle via #app-workspace[data-active-section] */
+#app-workspace[data-active-section="home"] .sidebar,
+#app-workspace[data-active-section="home"] .chat-area,
+#app-workspace[data-active-section="people"] .sidebar,
+#app-workspace[data-active-section="people"] .chat-area,
+#app-workspace[data-active-section="placeholder"] .sidebar,
+#app-workspace[data-active-section="placeholder"] .chat-area,
+#app-workspace[data-active-section="settings"] .sidebar,
+#app-workspace[data-active-section="settings"] .chat-area {
+    display: none !important;
+}
+
+#app-workspace[data-active-section="home"] .workspace-home {
+    display: flex !important;
+}
+
+#app-workspace[data-active-section="people"] .workspace-people {
+    display: flex !important;
+}
+
+#app-workspace[data-active-section="placeholder"] .workspace-placeholder {
+    display: flex !important;
+}
+
+#app-workspace[data-active-section="settings"] .workspace-settings {
+    display: flex !important;
+}
+
+#app-workspace:not([data-active-section="home"]) .workspace-home {
+    display: none !important;
+}
+
+#app-workspace:not([data-active-section="people"]) .workspace-people {
+    display: none !important;
+}
+
+#app-workspace:not([data-active-section="placeholder"]) .workspace-placeholder {
+    display: none !important;
+}
+
+#app-workspace:not([data-active-section="settings"]) .workspace-settings {
+    display: none !important;
+}
+
+/* Home Scroll Area */
+.home-scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: var(--space-md, 16px) var(--space-lg, 20px) 40px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xl, 24px);
+    box-sizing: border-box;
+}
+
+/* Placeholder Scroll Area */
+.placeholder-scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: var(--space-md, 16px) var(--space-lg, 20px) 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+}
+
+/* People Scroll Area */
+.people-scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Settings Scroll Area */
+.settings-scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: var(--space-md, 16px) var(--space-lg, 20px) 40px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xl, 24px);
+    box-sizing: border-box;
+}
+
+@media (min-width: 769px) {
+    #back-btn { display: none; }
+    .app-bottom-nav { display: none !important; }
+}
 
 /* --- 2. FIX: Force Mobile Header Left --- */
 @media (max-width: 768px) {
     .chat-header {
         /* Override the 'flex-end' that was pushing it to the right */
-        align-items: center !important; 
+        align-items: center !important;
         justify-content: flex-start !important; /* Force Left */
         padding-bottom: 10px !important;
         padding-left: 15px !important;
         gap: 15px !important;
     }
-    
+
     /* Fix Back Button Alignment */
     #back-btn {
         margin-right: 5px;

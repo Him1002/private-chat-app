@@ -279,6 +279,8 @@
     /* Layout Dimensions */
     --header-height: 60px;
     --sidebar-width: 320px;
+    --nav-rail-width: 68px;
+    --bottom-nav-height: 58px;
     --content-max-width: 1200px;
     --modal-max-width: 440px;
     --auth-box-max-width: 350px;
@@ -301,7 +303,9 @@
     --z-surface-elevated: 2;
     --z-sticky: 10;
     --z-sidebar: 20;
+    --z-nav-rail: 25;
     --z-mobile-view: 50;
+    --z-bottom-nav: 60;
     --z-dropdown: 100;
     --z-modal-backdrop: 900;
     --z-modal: 1000;

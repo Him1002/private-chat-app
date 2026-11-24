@@ -276,6 +276,19 @@ function startChat(friend, element) {
     cancelMessageEdit(true);
     cancelReplyMode(true);
     resetConversationSearchUI(true);
+    if (typeof navigateToSection === 'function') {
+        navigateToSection('chats');
+    } else {
+        if (typeof AppState !== 'undefined') {
+            AppState.currentSection = 'chats';
+        }
+        if (typeof currentSection !== 'undefined') {
+            currentSection = 'chats';
+        }
+        if (typeof updateNavigationUI === 'function') {
+            updateNavigationUI('chats');
+        }
+    }
     currentFriend = friend.username;
     friend.unread_count = 0;
     if (typeof updateSidebarUnread === "function") {

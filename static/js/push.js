@@ -213,6 +213,10 @@ async function unsubscribePush() {
 }
 
 function navigateToConversation(username) {
+    if (typeof navigateToSection === "function") {
+        navigateToSection('chats');
+    }
+
     if (!username || !token) {
         pendingChatNavigation = username;
         return;
@@ -227,9 +231,15 @@ function navigateToConversation(username) {
     }
 
     // If friends not loaded or friend not in cache, fetch friends list and open
+    const capturedGeneration = typeof getSessionGeneration === 'function' ? getSessionGeneration() : 0;
+    const capturedUser = typeof currentUser !== 'undefined' ? currentUser : null;
+
     fetch('/friends', { headers: { 'Authorization': `Bearer ${token}` } })
         .then(r => r.json())
         .then(friends => {
+            if (typeof isSessionValid === 'function' && !isSessionValid(capturedGeneration, capturedUser)) {
+                return;
+            }
             if (Array.isArray(friends)) {
                 window.cachedFriends = friends;
                 const friend = friends.find(f => f.username === username);

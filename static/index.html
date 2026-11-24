@@ -22,53 +22,56 @@
     </div>
 </div>
 
-<div id="profile-screen" class="overlay" style="display: none;">
-    <div class="box" style="position: relative; max-height: 90vh; overflow-y: auto;">
-        <button type="button" onclick="closeProfile()" style="position: absolute; top: 10px; right: 10px; background: none; border: none; font-size: 20px; color: #aaa; cursor: pointer;">&times;</button>
-        <h2 style="text-align: center; margin-top: 0;">My Profile</h2>
-        
-        <div style="display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 20px;">
-            <div id="profile-avatar-container" style="width: 100px; height: 100px; border-radius: 50%; background: #333; overflow: hidden; position: relative; cursor: pointer;" onclick="document.getElementById('profile-pic-upload').click()">
-                <img id="profile-pic-preview" src="" style="width: 100%; height: 100%; object-fit: cover; display: none;">
-                <div style="position: absolute; bottom: 0; width: 100%; background: rgba(0,0,0,0.5); text-align: center; font-size: 11px; padding: 4px 0; color: white;">Edit</div>
-            </div>
-            <input type="file" id="profile-pic-upload" style="display: none;" accept="image/*" onchange="handleProfilePicChange(this)">
-        </div>
-
-        <div style="display: flex; flex-direction: column; gap: 10px;">
-            <label style="font-size: 13px; color: #ccc;">Display Name</label>
-            <input id="profile-display-name" placeholder="Display Name">
-            
-            <label style="font-size: 13px; color: #ccc;">About</label>
-            <input id="profile-about" placeholder="Tell us about yourself">
-            
-            <div style="display: flex; gap: 10px; margin-top: 10px;">
-                <button onclick="closeProfile()" style="background: #444; flex: 1;">Cancel</button>
-                <button onclick="saveProfile()" style="background: #0084ff; flex: 1;">Save</button>
-            </div>
-        </div>
-
-        <hr style="border: 0; border-top: 1px solid #333; margin: 20px 0 10px 0;">
-        <h3 style="text-align: center; margin: 0; font-size: 16px; color: #eee;">Change Password</h3>
-
-        <div style="display: flex; flex-direction: column; gap: 10px; text-align: left;">
-            <label style="font-size: 13px; color: #ccc;">Current Password</label>
-            <input id="change-current-password" type="password" placeholder="Current password">
-
-            <label style="font-size: 13px; color: #ccc;">New Password</label>
-            <input id="change-new-password" type="password" placeholder="New password (min 8 chars)">
-
-            <label style="font-size: 13px; color: #ccc;">Confirm New Password</label>
-            <input id="change-confirm-password" type="password" placeholder="Confirm new password">
-
-            <button id="change-password-btn" type="button" onclick="handleChangePassword()" style="background: #28a745; margin-top: 5px; cursor: pointer;">Change Password</button>
-        </div>
-    </div>
-</div>
-
 <div id="app-container" class="view-list"> 
     
-    <div class="sidebar">
+    <!-- Desktop Navigation Rail Shell (UI-02A / UI-02B) -->
+    <nav id="app-nav-rail" class="app-nav-rail" aria-label="Main Navigation">
+        <div class="nav-rail-group">
+            <button type="button" class="nav-rail-item" data-destination="home" aria-label="Home" title="Home">
+                <svg class="nav-rail-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                    <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                </svg>
+                <span class="nav-rail-tooltip" role="tooltip">Home</span>
+            </button>
+            <button type="button" class="nav-rail-item active" data-destination="chats" aria-label="Chats" aria-current="page" title="Chats">
+                <svg class="nav-rail-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2v5z"></path>
+                    <path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"></path>
+                </svg>
+                <span class="nav-rail-tooltip" role="tooltip">Chats</span>
+            </button>
+            <button type="button" class="nav-rail-item" data-destination="people" aria-label="People" title="People">
+                <svg class="nav-rail-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+                <span class="nav-rail-tooltip" role="tooltip">People</span>
+            </button>
+            <button type="button" class="nav-rail-item" data-destination="placeholder" aria-label="Placeholder" title="Placeholder">
+                <svg class="nav-rail-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+                <span class="nav-rail-tooltip" role="tooltip">Placeholder</span>
+            </button>
+            <button type="button" class="nav-rail-item" data-destination="settings" aria-label="Settings" title="Settings">
+                <svg class="nav-rail-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+                <span class="nav-rail-tooltip" role="tooltip">Settings</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Central Application Workspace (UI-02A) -->
+    <main id="app-workspace" class="app-workspace">
+        <div class="sidebar">
         <div class="sidebar-header" style="flex-direction: column; height: auto; gap: 0;">
             
             <div style="width: 100%; padding: 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2a2a2a;">
@@ -245,6 +248,355 @@
             <button id="send-btn" type="button" onclick="send()" disabled>&#10148;</button>
         </div>
     </div>
+
+    <!-- Dedicated Home Workspace (UI-02F) -->
+    <section id="workspace-home" class="workspace-section workspace-home" aria-label="Home" style="display: none;">
+        <div class="home-container">
+            <header class="home-header">
+                <div class="home-title-group">
+                    <h1 class="home-title">Home</h1>
+                    <span class="home-subtitle">ChatSpic Communication Hub</span>
+                </div>
+            </header>
+
+            <div class="home-scroll-area">
+                <!-- 1. Welcome Card -->
+                <div class="home-card home-hero-card">
+                    <div class="home-hero-content">
+                        <div class="home-hero-badge">Welcome Back</div>
+                        <h2 class="home-hero-greeting" id="home-welcome-greeting">Hello!</h2>
+                        <p class="home-hero-desc">Connect, message, and call with end-to-end security and real-time speed.</p>
+                    </div>
+                </div>
+
+                <!-- 2. Quick Navigation Actions -->
+                <div class="home-group">
+                    <div class="home-group-header">
+                        <h2 class="home-group-title">Quick Actions</h2>
+                        <span class="home-group-desc">Jump straight to your workspaces</span>
+                    </div>
+                    <div class="home-actions-grid">
+                        <button type="button" class="home-action-card" onclick="navigateToSection('chats')" aria-label="Open Chats">
+                            <div class="home-action-icon-wrap action-chats">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2v5z"></path>
+                                    <path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"></path>
+                                </svg>
+                            </div>
+                            <div class="home-action-text">
+                                <span class="home-action-title">Chats</span>
+                                <span class="home-action-desc">Conversations & messages</span>
+                            </div>
+                        </button>
+
+                        <button type="button" class="home-action-card" onclick="navigateToSection('people')" aria-label="Open People">
+                            <div class="home-action-icon-wrap action-people">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                    <circle cx="9" cy="7" r="4"></circle>
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                </svg>
+                            </div>
+                            <div class="home-action-text">
+                                <span class="home-action-title">People</span>
+                                <span class="home-action-desc">Contacts & user search</span>
+                            </div>
+                        </button>
+
+                        <button type="button" class="home-action-card" onclick="navigateToSection('settings')" aria-label="Open Settings">
+                            <div class="home-action-icon-wrap action-settings">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                                </svg>
+                            </div>
+                            <div class="home-action-text">
+                                <span class="home-action-title">Settings</span>
+                                <span class="home-action-desc">Profile & preferences</span>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 3. Network / Contacts Status Summary -->
+                <div class="home-group">
+                    <div class="home-group-header">
+                        <h2 class="home-group-title">Network Status</h2>
+                        <span class="home-group-desc">Your contacts and connection status</span>
+                    </div>
+                    <div class="home-card">
+                        <div class="home-stat-row">
+                            <div class="home-stat-item">
+                                <span class="home-stat-label">Contacts</span>
+                                <span id="home-contacts-stat" class="home-stat-value">--</span>
+                            </div>
+                            <div class="home-stat-divider"></div>
+                            <div class="home-stat-item">
+                                <span class="home-stat-label">Online Now</span>
+                                <span id="home-online-stat" class="home-stat-value stat-online">--</span>
+                            </div>
+                        </div>
+                        <div id="home-empty-notice" class="home-empty-notice" style="display: none;">
+                            No contacts added yet. Head to the People workspace to find and add friends.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Application Identity -->
+                <div class="home-group">
+                    <div class="home-card home-about-card">
+                        <div class="home-about-header">
+                            <span class="home-about-title">ChatSpic Web</span>
+                            <span class="settings-badge muted">v2.0</span>
+                        </div>
+                        <p class="home-about-text">Private, real-time messaging with instant presence, encrypted media, and WebRTC voice & video calling.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Dedicated People Workspace (UI-02D) -->
+    <section id="workspace-people" class="workspace-section workspace-people" aria-label="People" style="display: none;">
+        <div class="people-container">
+            <div class="people-header">
+                <div class="people-header-top">
+                    <div class="people-title-group">
+                        <h1 class="people-title">People</h1>
+                        <span id="people-count-badge" class="people-count-badge">0 contacts</span>
+                    </div>
+                </div>
+                <div class="people-search-bar">
+                    <svg class="people-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input id="people-search-input" class="people-search-input" type="text" placeholder="Find users..." oninput="handlePeopleSearch(event)" autocomplete="off">
+                    <button id="people-search-clear" class="people-search-clear" type="button" onclick="clearPeopleSearch()" aria-label="Clear search" style="display: none;">&times;</button>
+                </div>
+            </div>
+
+            <div id="people-scroll-area" class="people-scroll-area">
+                <!-- Search Results Section -->
+                <div id="people-search-section" class="people-section" style="display: none;">
+                    <div class="section-title">Search Results</div>
+                    <div id="people-search-list" class="people-list"></div>
+                </div>
+
+                <!-- Incoming Friend Requests Section -->
+                <div id="people-requests-section" class="people-section" style="display: none;">
+                    <div id="people-requests-title" class="section-title">Friend Requests (0)</div>
+                    <div id="people-requests-list" class="people-list"></div>
+                </div>
+
+                <!-- Contacts Directory Section -->
+                <div id="people-contacts-section" class="people-section">
+                    <div class="section-title">Your Contacts</div>
+                    <div id="people-contacts-list" class="people-list"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Dedicated Neutral Placeholder Workspace (UI-02F) -->
+    <section id="workspace-placeholder" class="workspace-section workspace-placeholder" aria-label="Placeholder" style="display: none;">
+        <div class="placeholder-container">
+            <header class="placeholder-header">
+                <div class="placeholder-title-group">
+                    <h1 class="placeholder-title">Placeholder</h1>
+                    <span class="placeholder-subtitle">Reserved navigation section</span>
+                </div>
+            </header>
+
+            <div class="placeholder-scroll-area">
+                <div class="placeholder-empty-state">
+                    <div class="placeholder-icon-wrap" aria-hidden="true">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="14" width="7" height="7"></rect>
+                            <rect x="3" y="14" width="7" height="7"></rect>
+                        </svg>
+                    </div>
+                    <h2 class="placeholder-heading">Section Coming Soon</h2>
+                    <p class="placeholder-desc">This section is reserved for future features and is not yet available.</p>
+                    <div class="placeholder-action">
+                        <button type="button" class="settings-btn primary" onclick="navigateToSection('chats')">Return to Chats</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Dedicated Settings Workspace (UI-02E) -->
+    <section id="workspace-settings" class="workspace-section workspace-settings" aria-label="Settings" style="display: none;">
+        <div class="settings-container">
+            <div class="settings-header">
+                <div class="settings-title-group">
+                    <h1 class="settings-title">Settings</h1>
+                    <span class="settings-subtitle">Manage your profile, security, and preferences</span>
+                </div>
+            </div>
+
+            <div class="settings-scroll-area">
+                <!-- Group 1: Profile Information -->
+                <div class="settings-group">
+                    <div class="settings-group-header">
+                        <h2 class="settings-group-title">Profile Information</h2>
+                        <span class="settings-group-desc">Your public display name, photo, and bio</span>
+                    </div>
+                    <div class="settings-card">
+                        <div class="settings-avatar-row">
+                            <label for="profile-pic-upload" id="profile-avatar-container" class="settings-avatar-container" tabindex="0" role="button" aria-label="Change profile photo" title="Click to change photo" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();document.getElementById('profile-pic-upload').click();}">
+                                <img id="profile-pic-preview" src="" alt="Profile picture" class="settings-avatar-img" style="display: none;">
+                                <div class="settings-avatar-overlay">Change</div>
+                            </label>
+                            <input type="file" id="profile-pic-upload" style="display: none;" accept="image/*" onchange="handleProfilePicChange(this)">
+                            <div class="settings-avatar-info">
+                                <span class="settings-avatar-label">Profile Photo</span>
+                                <span class="settings-avatar-hint">Click the avatar to upload a new picture (JPG, PNG)</span>
+                                <span id="settings-username" class="settings-username-badge"></span>
+                            </div>
+                        </div>
+
+                        <div class="settings-field">
+                            <label for="profile-display-name" class="settings-label">Display Name</label>
+                            <input id="profile-display-name" class="settings-input" placeholder="Your display name" autocomplete="name">
+                        </div>
+
+                        <div class="settings-field">
+                            <label for="profile-about" class="settings-label">About</label>
+                            <input id="profile-about" class="settings-input" placeholder="Tell us about yourself" autocomplete="off">
+                        </div>
+
+                        <div class="settings-actions">
+                            <button type="button" class="settings-btn primary" onclick="saveProfile()">Save Profile</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Group 2: Account Security / Change Password -->
+                <div class="settings-group">
+                    <div class="settings-group-header">
+                        <h2 class="settings-group-title">Security & Password</h2>
+                        <span class="settings-group-desc">Update your password to keep your account secure</span>
+                    </div>
+                    <div class="settings-card">
+                        <div class="settings-field">
+                            <label for="change-current-password" class="settings-label">Current Password</label>
+                            <input id="change-current-password" class="settings-input" type="password" placeholder="Enter current password" autocomplete="current-password">
+                        </div>
+
+                        <div class="settings-field">
+                            <label for="change-new-password" class="settings-label">New Password</label>
+                            <input id="change-new-password" class="settings-input" type="password" placeholder="New password (min 8 characters)" autocomplete="new-password">
+                        </div>
+
+                        <div class="settings-field">
+                            <label for="change-confirm-password" class="settings-label">Confirm New Password</label>
+                            <input id="change-confirm-password" class="settings-input" type="password" placeholder="Confirm new password" autocomplete="new-password">
+                        </div>
+
+                        <div class="settings-actions">
+                            <button id="change-password-btn" type="button" class="settings-btn success" onclick="handleChangePassword()">Change Password</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Group 3: Notifications & Preferences -->
+                <div class="settings-group">
+                    <div class="settings-group-header">
+                        <h2 class="settings-group-title">Notifications & System</h2>
+                        <span class="settings-group-desc">Manage push notifications and device preferences</span>
+                    </div>
+                    <div class="settings-card">
+                        <div class="settings-row-between">
+                            <div class="settings-row-info">
+                                <span class="settings-row-title">Web Push Notifications</span>
+                                <span class="settings-row-desc">Receive instant alerts for incoming direct messages</span>
+                            </div>
+                            <div class="settings-row-action">
+                                <span id="settings-push-status" class="settings-badge">Checking...</span>
+                                <button id="settings-push-enable-btn" type="button" class="settings-btn subtle" onclick="requestPushFromSettings()" style="display: none;">Enable</button>
+                            </div>
+                        </div>
+
+                        <hr class="settings-divider">
+
+                        <div class="settings-row-between">
+                            <div class="settings-row-info">
+                                <span class="settings-row-title">Application Version</span>
+                                <span class="settings-row-desc">ChatSpic Web v2.0 &bull; UI Redesign</span>
+                            </div>
+                            <span class="settings-badge muted">v2.0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Group 4: Account Session -->
+                <div class="settings-group">
+                    <div class="settings-group-header">
+                        <h2 class="settings-group-title">Account Session</h2>
+                        <span class="settings-group-desc">Sign out of your active session on this device</span>
+                    </div>
+                    <div class="settings-card">
+                        <div class="settings-row-between">
+                            <div class="settings-row-info">
+                                <span class="settings-row-title">Sign Out</span>
+                                <span class="settings-row-desc">End your session securely and clear cached data</span>
+                            </div>
+                            <button type="button" class="settings-btn danger" onclick="logout()">Logout</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    </main>
+
+    <!-- Mobile Bottom Navigation Shell (UI-02A / UI-02B) -->
+    <nav id="app-bottom-nav" class="app-bottom-nav" aria-label="Mobile Navigation">
+        <button type="button" class="bottom-nav-item" data-destination="home" aria-label="Home">
+            <svg class="bottom-nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+            <span class="bottom-nav-label">Home</span>
+        </button>
+        <button type="button" class="bottom-nav-item active" data-destination="chats" aria-label="Chats" aria-current="page">
+            <svg class="bottom-nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2v5z"></path>
+                <path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"></path>
+            </svg>
+            <span class="bottom-nav-label">Chats</span>
+        </button>
+        <button type="button" class="bottom-nav-item" data-destination="people" aria-label="People">
+            <svg class="bottom-nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            <span class="bottom-nav-label">People</span>
+        </button>
+        <button type="button" class="bottom-nav-item" data-destination="placeholder" aria-label="Placeholder">
+            <svg class="bottom-nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            <span class="bottom-nav-label">Placeholder</span>
+        </button>
+        <button type="button" class="bottom-nav-item" data-destination="settings" aria-label="Settings">
+            <svg class="bottom-nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            <span class="bottom-nav-label">Settings</span>
+        </button>
+    </nav>
 </div>
 
 <!-- Outgoing Call Modal Overlay -->
@@ -433,6 +785,8 @@
 <script src="/static/js/core.js"></script>
 <script src="/static/js/utils.js"></script>
 <script src="/static/js/sidebar.js"></script>
+<script src="/static/js/people.js"></script>
+<script src="/static/js/home.js"></script>
 <script src="/static/js/auth.js"></script>
 <script src="/static/js/websocket.js"></script>
 <script src="/static/js/webrtc.js"></script>
@@ -451,6 +805,7 @@
     let presenceRefreshTimer = null;
     let isRegisterMode = false;
     let currentTab = 'chats';
+    let currentSection = 'chats';
 
 // --- UI HELPERS ---
 

@@ -1,16 +1,35 @@
 function switchTab(tabName) {
     currentTab = tabName;
+    if (typeof AppState !== 'undefined') {
+        AppState.currentTab = tabName;
+    }
     
     // Update UI Tabs
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById(`tab-${tabName}`).classList.add('active');
+    const tabBtn = document.getElementById(`tab-${tabName}`);
+    if (tabBtn) tabBtn.classList.add('active');
 
     // Show/Hide Search
     const searchBox = document.getElementById("search-container");
-    if (tabName === 'people') {
-        searchBox.style.display = 'block';
-    } else {
-        searchBox.style.display = 'none';
+    if (searchBox) {
+        if (tabName === 'people') {
+            searchBox.style.display = 'block';
+        } else {
+            searchBox.style.display = 'none';
+        }
+    }
+
+    // Keep primary navigation in sync when switching between 'chats' and 'people'
+    if (tabName === 'chats' || tabName === 'people') {
+        if (typeof AppState !== 'undefined') {
+            AppState.currentSection = tabName;
+        }
+        if (typeof currentSection !== 'undefined') {
+            currentSection = tabName;
+        }
+        if (typeof updateNavigationUI === 'function') {
+            updateNavigationUI(tabName);
+        }
     }
 
     // Reload the list
@@ -20,8 +39,13 @@ function switchTab(tabName) {
 async function loadSidebar() {
     if (!token) return;
 
-    const list = document.getElementById("list-area");
-    list.innerHTML = "";
+    // Capture active session generation and username before dispatching async network requests
+    const capturedGeneration = typeof getSessionGeneration === 'function'
+        ? getSessionGeneration()
+        : (typeof AppState !== 'undefined' && typeof AppState.sessionGeneration === 'number' ? AppState.sessionGeneration : 0);
+    const capturedUser = typeof currentUser !== 'undefined'
+        ? currentUser
+        : (typeof AppState !== 'undefined' ? AppState.currentUser : null);
 
     // fetch data
     const [reqRes, friendRes, convRes] = await Promise.all([
@@ -30,10 +54,30 @@ async function loadSidebar() {
         fetch("/conversations", {headers: {"Authorization": `Bearer ${token}`}})
     ]);
 
+    // Session generation guard: discard stale responses if session changed or user logged out during fetch
+    if (typeof isSessionValid === 'function') {
+        if (!isSessionValid(capturedGeneration, capturedUser)) {
+            return;
+        }
+    } else {
+        const activeUser = typeof currentUser !== 'undefined' ? currentUser : (typeof AppState !== 'undefined' ? AppState.currentUser : null);
+        if (!token || activeUser !== capturedUser) {
+            return;
+        }
+    }
+
     if (!reqRes.ok || !friendRes.ok) return;
+
+    const list = document.getElementById("list-area");
+    if (list) list.innerHTML = "";
 
     const requests = await reqRes.json();
     const friends = await friendRes.json();
+
+    // Final verification before committing to memory and rendering UI
+    if (typeof isSessionValid === 'function' && !isSessionValid(capturedGeneration, capturedUser)) {
+        return;
+    }
 
     const convMap = {};
     if (convRes && convRes.ok) {
@@ -53,6 +97,9 @@ async function loadSidebar() {
     });
 
     window.cachedFriends = friends;
+    if (typeof updateHomeStats === 'function') {
+        updateHomeStats();
+    }
 
     const selectedFriend = friends.find(f => f.username === currentFriend);
     if (selectedFriend) updateChatStatus(selectedFriend);
@@ -79,35 +126,7 @@ async function loadSidebar() {
             reqTitle.className = "section-title";
             reqTitle.textContent = `Requests (${requests.length})`;
             list.appendChild(reqTitle);
-
-            requests.forEach(r => {
-                const div = document.createElement("div");
-                div.className = "item";
-
-                const avatar = document.createElement("div");
-                avatar.className = "avatar";
-                avatar.style.background = "#d9534f";
-                avatar.style.border = "none";
-                avatar.textContent = "!";
-
-                const info = document.createElement("div");
-                info.className = "info";
-                const nameSpan = document.createElement("span");
-                nameSpan.className = "name";
-                nameSpan.textContent = r.username || "";
-                info.appendChild(nameSpan);
-
-                const acceptBtn = document.createElement("button");
-                acceptBtn.className = "action-btn";
-                acceptBtn.style.background = "#28a745";
-                acceptBtn.textContent = "Accept";
-                acceptBtn.addEventListener("click", () => acceptRequest(r.request_id));
-
-                div.appendChild(avatar);
-                div.appendChild(info);
-                div.appendChild(acceptBtn);
-                list.appendChild(div);
-            });
+            requests.forEach(r => renderFriendRequestItem(list, r));
         }
 
         // 2. All Friends (Directory)
@@ -119,12 +138,132 @@ async function loadSidebar() {
     }
 }
 
+function renderFriendRequestItem(container, r) {
+    const div = document.createElement("div");
+    div.className = "item friend-request-item";
+
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.style.background = "#d9534f";
+    avatar.style.border = "none";
+    avatar.textContent = "!";
+
+    const info = document.createElement("div");
+    info.className = "info";
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "name";
+    nameSpan.textContent = r.username || "";
+    info.appendChild(nameSpan);
+
+    const acceptBtn = document.createElement("button");
+    acceptBtn.className = "action-btn";
+    acceptBtn.style.background = "#28a745";
+    acceptBtn.textContent = "Accept";
+    acceptBtn.addEventListener("click", () => acceptRequest(r.request_id));
+
+    div.appendChild(avatar);
+    div.appendChild(info);
+    div.appendChild(acceptBtn);
+    container.appendChild(div);
+    return div;
+}
+
+function renderSearchResultItem(container, item) {
+    const div = document.createElement("div");
+    div.className = "item search-result-item";
+
+    const avatarDiv = document.createElement("div");
+    avatarDiv.className = "avatar";
+    const sanitizedPic = sanitizeMediaUrl(item.profile_picture);
+    if (sanitizedPic) {
+        const img = document.createElement("img");
+        img.alt = "";
+        img.style.width = "100%";
+        img.style.height = "100%";
+        img.style.objectFit = "cover";
+        img.style.borderRadius = "50%";
+        avatarDiv.appendChild(img);
+        if (sanitizedPic.startsWith("http://") || sanitizedPic.startsWith("https://") || sanitizedPic.startsWith("blob:") || sanitizedPic.startsWith("data:")) {
+            img.src = sanitizedPic;
+        } else if (typeof fetchSecureMediaBlobUrl === "function") {
+            fetchSecureMediaBlobUrl(sanitizedPic).then(blobUrl => {
+                if (blobUrl) img.src = blobUrl;
+            });
+        } else {
+            img.src = sanitizedPic;
+        }
+    } else {
+        const initial = (item.username && item.username.length > 0) ? item.username[0].toUpperCase() : "?";
+        avatarDiv.textContent = initial;
+    }
+
+    const infoDiv = document.createElement("div");
+    infoDiv.className = "info";
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "name";
+    nameSpan.textContent = item.display_name || item.username || "";
+    infoDiv.appendChild(nameSpan);
+
+    if (item.about) {
+        const aboutSpan = document.createElement("span");
+        aboutSpan.className = "status";
+        aboutSpan.style.opacity = "0.7";
+        aboutSpan.style.fontSize = "11px";
+        aboutSpan.textContent = item.about;
+        infoDiv.appendChild(aboutSpan);
+    }
+
+    div.appendChild(avatarDiv);
+    div.appendChild(infoDiv);
+
+    if (item.status === "none") {
+        const addBtn = document.createElement("button");
+        addBtn.className = "action-btn";
+        addBtn.textContent = "Add";
+        addBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            addFriend(item.username);
+        });
+        div.appendChild(addBtn);
+    } else if (item.status === "pending") {
+        const sentSpan = document.createElement("span");
+        sentSpan.className = "status";
+        sentSpan.textContent = "Sent";
+        div.appendChild(sentSpan);
+    } else {
+        const friendSpan = document.createElement("span");
+        friendSpan.className = "status";
+        friendSpan.textContent = "Friend";
+        div.appendChild(friendSpan);
+        div.onclick = () => {
+            startChat({
+                username: item.username,
+                display_name: item.display_name,
+                profile_picture: item.profile_picture,
+                is_online: item.is_online || false
+            }, div);
+        };
+    }
+
+    container.appendChild(div);
+    return div;
+}
+
 async function handleSearch(e) {
     const query = e.target.value;
     if (!query) return loadSidebar(); 
 
+    const capturedGeneration = typeof getSessionGeneration === 'function' ? getSessionGeneration() : 0;
+    const capturedUser = typeof currentUser !== 'undefined' ? currentUser : null;
+
     const res = await fetch(`/search?query=${query}`, {headers: {"Authorization": `Bearer ${token}`}});
+    if (typeof isSessionValid === 'function' && !isSessionValid(capturedGeneration, capturedUser)) {
+        return;
+    }
     const results = await res.json();
+    if (typeof isSessionValid === 'function' && !isSessionValid(capturedGeneration, capturedUser)) {
+        return;
+    }
     const list = document.getElementById("list-area");
     list.innerHTML = "";
 
@@ -139,72 +278,7 @@ async function handleSearch(e) {
     }
 
     results.forEach(item => {
-        const div = document.createElement("div");
-        div.className = "item";
-
-        const avatarDiv = document.createElement("div");
-        avatarDiv.className = "avatar";
-        const sanitizedPic = sanitizeMediaUrl(item.profile_picture);
-        if (sanitizedPic) {
-            const img = document.createElement("img");
-            img.alt = "";
-            img.style.width = "100%";
-            img.style.height = "100%";
-            img.style.objectFit = "cover";
-            img.style.borderRadius = "50%";
-            avatarDiv.appendChild(img);
-            if (sanitizedPic.startsWith("http://") || sanitizedPic.startsWith("https://") || sanitizedPic.startsWith("blob:") || sanitizedPic.startsWith("data:")) {
-                img.src = sanitizedPic;
-            } else if (typeof fetchSecureMediaBlobUrl === "function") {
-                fetchSecureMediaBlobUrl(sanitizedPic).then(blobUrl => {
-                    if (blobUrl) img.src = blobUrl;
-                });
-            } else {
-                img.src = sanitizedPic;
-            }
-        } else {
-            const initial = (item.username && item.username.length > 0) ? item.username[0].toUpperCase() : "?";
-            avatarDiv.textContent = initial;
-        }
-
-        const infoDiv = document.createElement("div");
-        infoDiv.className = "info";
-        const nameSpan = document.createElement("span");
-        nameSpan.className = "name";
-        nameSpan.textContent = item.display_name || item.username || "";
-        infoDiv.appendChild(nameSpan);
-
-        if (item.about) {
-            const aboutSpan = document.createElement("span");
-            aboutSpan.className = "status";
-            aboutSpan.style.opacity = "0.7";
-            aboutSpan.style.fontSize = "11px";
-            aboutSpan.textContent = item.about;
-            infoDiv.appendChild(aboutSpan);
-        }
-
-        div.appendChild(avatarDiv);
-        div.appendChild(infoDiv);
-
-        if (item.status === "none") {
-            const addBtn = document.createElement("button");
-            addBtn.className = "action-btn";
-            addBtn.textContent = "Add";
-            addBtn.addEventListener("click", () => addFriend(item.username));
-            div.appendChild(addBtn);
-        } else if (item.status === "pending") {
-            const sentSpan = document.createElement("span");
-            sentSpan.className = "status";
-            sentSpan.textContent = "Sent";
-            div.appendChild(sentSpan);
-        } else {
-            const friendSpan = document.createElement("span");
-            friendSpan.className = "status";
-            friendSpan.textContent = "Friend";
-            div.appendChild(friendSpan);
-        }
-
-        list.appendChild(div);
+        renderSearchResultItem(list, item);
     });
 }
 
@@ -288,11 +362,28 @@ function renderFriendItem(container, f) {
 async function addFriend(username) {
     await fetch(`/friends/request/${username}`, { method: "POST", headers: {"Authorization": `Bearer ${token}`}} );
     showToast(`Request sent to ${username}`, "success");
-    handleSearch({target: {value: document.getElementById("search-input").value}});
+    const peopleSearchInput = document.getElementById("people-search-input");
+    if (peopleSearchInput && peopleSearchInput.value.trim() && typeof executePeopleSearch === "function") {
+        executePeopleSearch(peopleSearchInput.value.trim());
+    }
+    const sidebarSearchInput = document.getElementById("search-input");
+    if (sidebarSearchInput && sidebarSearchInput.value.trim()) {
+        handleSearch({target: {value: sidebarSearchInput.value}});
+    }
 }
 
 async function acceptRequest(id) {
     await fetch(`/friends/accept/${id}`, { method: "POST", headers: {"Authorization": `Bearer ${token}`} });
     showToast("Friend added!", "success");
     loadSidebar();
+    if (typeof loadPeopleWorkspace === "function") {
+        loadPeopleWorkspace();
+    }
 }
+
+// Global exposure
+window.renderFriendItem = renderFriendItem;
+window.renderFriendRequestItem = renderFriendRequestItem;
+window.renderSearchResultItem = renderSearchResultItem;
+window.addFriend = addFriend;
+window.acceptRequest = acceptRequest;

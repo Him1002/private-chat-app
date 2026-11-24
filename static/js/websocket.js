@@ -180,6 +180,12 @@ function refreshSidebarForPresence() {
     }
 
     loadSidebar();
+    if (typeof AppState !== 'undefined' && AppState.currentSection === 'people' && typeof loadPeopleWorkspace === 'function') {
+        const peopleSearch = document.getElementById("people-search-input");
+        if (!peopleSearch || !peopleSearch.value.trim()) {
+            loadPeopleWorkspace();
+        }
+    }
 }
 
 function updateChatStatus(friend) {
